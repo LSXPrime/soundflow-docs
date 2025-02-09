@@ -259,25 +259,25 @@ This code initializes the `AudioEngine`, creates a `SoundPlayer`, adds it to the
 *   `S`: Prompts the user for a seek time (in seconds) and seeks to that position.
 *   Any other key: Stops playback.
 
-#### 4. Looping
+#### 4. Looping with Custom Loop Points
 
-This tutorial demonstrates how to enable looping for a `SoundPlayer`.
+This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to set custom loop points.
 
 **Steps:**
 
 <Steps>
-1. **Create a new console application:**
+    1. **Create a new console application:**
 
     ```
     dotnet new console -o LoopingPlayback
     cd LoopingPlayback
     ```
-2. **Install the SoundFlow NuGet package:**
+    2. **Install the SoundFlow NuGet package:**
 
     ```
     dotnet add package SoundFlow
     ```
-3. **Replace the contents of `Program.cs` with the following code:**
+    3. **Replace the contents of `Program.cs` with the following code:**
 
     ```csharp
     using SoundFlow.Abstracts;
@@ -285,6 +285,7 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer`.
     using SoundFlow.Components;
     using SoundFlow.Enums;
     using SoundFlow.Providers;
+    using System.IO;
 
     namespace LoopingPlayback;
 
@@ -294,33 +295,44 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer`.
         {
             // Initialize the audio engine.
             using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
-
+    
             // Create a SoundPlayer and load an audio file.
             var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav")));
-
+    
             // Enable looping.
             player.IsLooping = true;
-
+    
+            // **Optional: Set custom loop points**
+    
+            // Example 1: Loop from 2.5 seconds to 7.0 seconds (using seconds)
+            player.SetLoopPoints(2.5f, 7.0f);
+    
+            // Example 2: Loop from sample 110250 to sample 308700 (using samples)
+            // player.SetLoopPoints(110250, 308700);
+    
+            // Example 3: Loop from 1.5 seconds to the natural end of the audio (using seconds, end point is optional)
+            // player.SetLoopPoints(1.5f);
+    
             // Add the player to the master mixer.
             Mixer.Master.AddComponent(player);
-
+    
             // Start playback.
             player.Play();
-
+    
             // Keep the console application running until the user presses a key.
             Console.WriteLine("Playing audio in a loop... Press any key to stop.");
             Console.ReadKey();
-
+    
             // Stop playback.
             player.Stop();
-
+    
             // Remove the player from the mixer.
             Mixer.Master.RemoveComponent(player);
         }
     }
     ```
-4. **Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.**
-5. **Build and run the application:**
+    4. **Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.**
+    5. **Build and run the application:**
 
     ```
     dotnet run
@@ -329,7 +341,26 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer`.
 
 **Explanation:**
 
-This code is similar to the basic playback example, but it sets the `IsLooping` property of the `SoundPlayer` to `true`. This causes the player to automatically restart playback from the beginning when it reaches the end of the audio data, creating a continuous loop.
+This code builds upon the basic playback example and introduces audio looping with custom loop points.
+
+*   **`player.IsLooping = true;`**: This line enables looping for the `SoundPlayer`.  It's essential to set this to `true` for any looping behavior.
+
+*   **`player.SetLoopPoints(...)`**: This method, used with different parameters, allows you to define custom loop regions within the audio:
+
+*   **`player.SetLoopPoints(2.5f, 7.0f);` (Seconds):** This sets the loop to start at 2.5 seconds and end at 7.0 seconds of the audio. Playback will seamlessly jump back to the 2.5-second mark when it reaches 7.0 seconds.
+
+*   **`player.SetLoopPoints(110250, 308700);` (Samples):**  This sets the loop points using sample indices.  Looping will occur between sample 110250 and sample 308700.
+
+*   **`player.SetLoopPoints(1.5f);` (Start Time, Loop to End):**  When you provide only a start time (or `startSample`), the audio will loop from the specified start point to the natural end of the audio file. In this example, playback loops from 1.5 seconds to the end of the audio.
+
+**To experiment with different loop configurations:**
+
+1.  Uncomment the specific `player.SetLoopPoints(...)` line corresponding to the looping behavior you want to test (seconds, samples, or loop-to-end).
+2.  Comment out any other `player.SetLoopPoints(...)` lines to avoid conflicts.
+3.  Run the application to hear the audio looping with your defined loop points.
+
+Remember to have `player.IsLooping = true;` enabled for any of these loop point configurations to take effect. If `IsLooping` is `false`, the audio will play once through without looping, regardless of any loop points set.
+
 
 #### 5. Surround Sound
 

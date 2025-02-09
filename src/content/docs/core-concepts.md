@@ -163,22 +163,30 @@ SoundFlow provides two classes for audio playback:
 *   **`SoundPlayer`:** A basic `SoundComponent` that plays audio from an `ISoundDataProvider`.
 *   **`SurroundPlayer`:** An extended version of `SoundPlayer` that supports advanced surround sound configurations.
 
-**Key Features (`SoundPlayer`):**
-
-*   Implements the `ISoundPlayer` interface, which defines methods for controlling playback:
-    *   `Play()`
-    *   `Pause()`
-    *   `Stop()`
-    *   `Seek(float time)`
+**`ISoundPlayer` interface, which defines methods for controlling playback:**
 *   `State`: Indicates the current playback state (Playing, Paused, Stopped).
 *   `IsLooping`: Enables or disables looping.
 *   `Time`: Gets the current playback position.
 *   `Duration`: Gets the total duration of the audio.
+*   `LoopStartSeconds`: Gets the loop start point in seconds.
+*   `LoopEndSeconds`: Gets the loop end point in seconds. -1 indicates loop to the natural end of the audio.
+*   `LoopStartSamples`: Gets the loop start point in samples.
+*   `LoopEndSamples`: Gets the loop end point in samples. -1 indicates loop to the natural end of the audio.
 *   `PlaybackEnded`: An event that is raised when playback finishes.
+*   `Play()`: Begins audio playback.
+*   `Pause()`: Pauses audio playback.
+*   `Stop()`: Stops audio playback and resets the playhead to the beginning.
+*   `Seek(float time)`: Seeks to a specific time in seconds.
+*   `Seek(int sampleOffset)`: Seeks to a specific sample offset.
+*   `SetLoopPoints(float startTime, float? endTime = -1f)`: Sets the loop points in seconds. `endTime` is optional, and using -1 or null loops to the natural end.
+*   `SetLoopPoints(int startSample, int endSample = -1)`: Sets the loop points in samples. `endSample` is optional, and using -1 loops to the natural end.
+
+**Key Features (`SoundPlayer`):**
+*   Inherits from `ISoundPlayer`.
 
 **Key Features (`SurroundPlayer`):**
 
-*   Inherits from `SoundPlayer`.
+*   Inherits from `ISoundPlayer`.
 *   `SpeakerConfiguration`: Allows you to define the speaker setup (e.g., Stereo, Quad, 5.1, 7.1, or a custom configuration).
 *   `PanningMethod`: Selects the panning algorithm to use (Linear, EqualPower, or VBAP).
 *   `ListenerPosition`: Sets the listener's position relative to the speakers.
@@ -228,7 +236,7 @@ The `Recorder` class allows you to capture audio input from a recording device.
 *   `MicrophoneDataProvider`: Captures audio data from the microphone in real-time.
 *   `ChunkedDataProvider`: Reads audio data from a file or stream in chunks, making it efficient for large files. It decodes audio on-demand and prefetches data to ensure smooth playback.
 *   `NetworkDataProvider`: Reads audio data from a network source (URL). It supports both direct audio file URLs and HLS (HTTP Live Streaming) playlists. It handles playlist parsing, segment downloading, and seeking.
-
+*   `RawDataProvider`: Reads audio data from a raw pcm stream. 
 
 ## Audio Encoding/Decoding (`ISoundEncoder`, `ISoundDecoder`)
 

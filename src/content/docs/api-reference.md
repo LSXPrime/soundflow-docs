@@ -594,6 +594,10 @@ public sealed class SoundPlayer : SoundComponent, ISoundPlayer
 
     public float Duration { get; }
     public bool IsLooping { get; set; }
+    public int LoopStartSamples { get; }
+    public int LoopEndSamples { get; }
+    public float LoopStartSeconds { get; }
+    public float LoopEndSeconds { get; }
     public override string Name { get; set; }
     public PlaybackState State { get; }
     public float Time { get; }
@@ -605,30 +609,38 @@ public sealed class SoundPlayer : SoundComponent, ISoundPlayer
     public void Play();
     public void Seek(float time);
     public void Seek(int sampleOffset);
+    public void SetLoopPoints(float startTime, float? endTime = -1f);
+    public void SetLoopPoints(int startSample, int endSample = -1);
     public void Stop();
 }
 ```
 
 **Properties:**
 
-*   `Duration`: The total duration of the audio.
-*   `IsLooping`: Whether looping is enabled.
-*   `Name`: The name of the sound player.
+*   `Duration`: The total duration of the audio in seconds.
+*   `IsLooping`: Gets or sets whether looping is enabled.
+*   `LoopStartSamples`: Gets the configured loop start point in samples.
+*   `LoopEndSamples`: Gets the configured loop end point in samples. -1 indicates looping to the natural end of the audio.
+*   `LoopStartSeconds`: Gets the configured loop start point in seconds.
+*   `LoopEndSeconds`: Gets the configured loop end point in seconds. -1 indicates looping to the natural end of the audio.
+*   `Name`: The name of the sound player component.
 *   `State`: The current playback state (`Stopped`, `Playing`, `Paused`).
-*   `Time`: The current playback position.
+*   `Time`: The current playback position in seconds.
 
 **Events:**
 
-*   `PlaybackEnded`: Occurs when playback reaches the end of the audio.
+*   `PlaybackEnded`: Occurs when playback reaches the natural end of the audio (not raised during looping).
 
 **Methods:**
 
-*   `GenerateAudio(Span<float> output)`: Reads audio data from the `ISoundDataProvider` and outputs it.
+*   `GenerateAudio(Span<float> output)`: Reads audio data from the `ISoundDataProvider`, applies looping if enabled, and outputs the processed audio.
 *   `Pause()`: Pauses playback.
 *   `Play()`: Starts or resumes playback.
-*   `Seek(float time)`: Seeks to the specified time (in seconds).
-*   `Seek(int sampleOffset)`: Seeks to the specified sample offset.
-*   `Stop()`: Stops playback and resets the position to the beginning.
+*   `Seek(float time)`: Seeks to the specified playback time in seconds.
+*   `Seek(int sampleOffset)`: Seeks to the specified playback position by sample offset.
+*   `SetLoopPoints(float startTime, float? endTime = -1f)`: Configures custom loop points using start and end times in seconds. `endTime` is optional; use -1 or `null` to loop to the natural end.
+*   `SetLoopPoints(int startSample, int endSample = -1)`: Configures custom loop points using start and end sample indices. `endSample` is optional; use -1 to loop to the natural end.
+*   `Stop()`: Stops playback and resets the playback position to the beginning.
 
 ### Components `SurroundPlayer`
 
@@ -639,14 +651,18 @@ public class SurroundPlayer : SoundComponent, ISoundPlayer
 
     public float Duration { get; }
     public bool IsLooping { get; set; }
+    public int LoopStartSamples { get; }
+    public int LoopEndSamples { get; }
+    public float LoopStartSeconds { get; }
+    public float LoopEndSeconds { get; }
     public Vector2 ListenerPosition { get; set; }
     public override string Name { get; set; }
     public PanningMethod Panning { get; set; }
-    public SpeakerConfiguration SpeakerConfig { get; set; }
     public PlaybackState State { get; }
     public float Time { get; }
     public VbapParameters VbapParameters { get; set; }
     public SurroundConfiguration SurroundConfig { get; set; }
+    public SpeakerConfiguration SpeakerConfig { get; set; } //moved down for better grouping
 
     public event EventHandler<EventArgs>? PlaybackEnded;
 
@@ -655,6 +671,8 @@ public class SurroundPlayer : SoundComponent, ISoundPlayer
     public void Play();
     public void Seek(float time);
     public void Seek(int sampleOffset);
+    public void SetLoopPoints(float startTime, float? endTime = -1f);
+    public void SetLoopPoints(int startSample, int endSample = -1);
     public void SetSpeakerConfiguration(SpeakerConfiguration config);
     public void Stop();
 }
@@ -662,30 +680,37 @@ public class SurroundPlayer : SoundComponent, ISoundPlayer
 
 **Properties:**
 
-*   `Duration`: The total duration of the audio.
-*   `IsLooping`: Whether looping is enabled.
-*   `ListenerPosition`: The position of the listener in the surround field.
-*   `Name`: The name of the surround player.
-*   `Panning`: The panning method to use (`Linear`, `EqualPower`, `VBAP`).
-*   `SpeakerConfig`: The speaker configuration (`Stereo`, `Quad`, `Surround51`, `Surround71`, `Custom`).
-*   `State`: The current playback state.
-*   `Time`: The current playback position.
-*   `VbapParameters`: Parameters for VBAP panning.
-*   `SurroundConfig`: The custom surround configuration (if `SpeakerConfig` is set to `Custom`).
+*   `Duration`: The total duration of the audio in seconds.
+*   `IsLooping`: Gets or sets whether looping is enabled.
+*   `LoopStartSamples`: Gets the configured loop start point in samples.
+*   `LoopEndSamples`: Gets the configured loop end point in samples. -1 indicates looping to the natural end of the audio.
+*   `LoopStartSeconds`: Gets the configured loop start point in seconds.
+*   `LoopEndSeconds`: Gets the configured loop end point in seconds. -1 indicates looping to the natural end of the audio.
+*   `ListenerPosition`: The position of the listener in the surround sound field (Vector2).
+*   `Name`: The name of the surround player component.
+*   `Panning`: Gets or sets the panning method to use for surround sound (`Linear`, `EqualPower`, `VBAP`).
+*   `SpeakerConfig`: Gets or sets the speaker configuration (`Stereo`, `Quad`, `Surround51`, `Surround71`, `Custom`).
+*   `State`: The current playback state (`Stopped`, `Playing`, `Paused`).
+*   `Time`: The current playback position in seconds.
+*   `VbapParameters`: Gets or sets parameters for Vector Base Amplitude Panning (VBAP).
+*   `SurroundConfig`: Gets or sets the custom surround configuration when `SpeakerConfig` is set to `Custom`.
 
 **Events:**
 
-*   `PlaybackEnded`: Occurs when playback reaches the end of the audio.
+*   `PlaybackEnded`: Occurs when playback reaches the natural end of the audio (not raised during looping).
 
 **Methods:**
 
-*   `GenerateAudio(Span<float> output)`: Processes audio for surround sound output.
+*   `GenerateAudio(Span<float> output)`: Reads audio data from the `ISoundDataProvider`, applies surround processing and looping if enabled, and outputs the processed audio.
 *   `Pause()`: Pauses playback.
 *   `Play()`: Starts or resumes playback.
-*   `Seek(float time)`: Seeks to the specified time.
-*   `Seek(int sampleOffset)`: Seeks to the specified sample offset.
-*   `SetSpeakerConfiguration(SpeakerConfiguration config)`: Sets the speaker configuration.
-*   `Stop()`: Stops playback.
+*   `Seek(float time)`: Seeks to the specified playback time in seconds.
+*   `Seek(int sampleOffset)`: Seeks to the specified playback position by sample offset.
+*   `SetLoopPoints(float startTime, float? endTime = -1f)`: Configures custom loop points using start and end times in seconds. `endTime` is optional; use -1 or `null` to loop to the natural end.
+*   `SetLoopPoints(int startSample, int endSample = -1)`: Configures custom loop points using start and end sample indices. `endSample` is optional; use -1 to loop to the natural end.
+*   `SetSpeakerConfiguration(SpeakerConfiguration config)`: Sets the speaker configuration for surround sound playback.
+*   `Stop()`: Stops playback and resets the playback position to the beginning.
+
 
 ### Components `VoiceActivityDetector`
 
@@ -1102,24 +1127,35 @@ public interface ISoundEncoder : IDisposable
 public interface ISoundPlayer
 {
     PlaybackState State { get; }
-    bool IsLooping { get; }
+    bool IsLooping { get; set; } //looping is enable and disable, so should have setter
     float Time { get; }
     float Duration { get; }
+    float LoopStartSeconds { get; }
+    float LoopEndSeconds { get; }
+    int LoopStartSamples { get; }
+    int LoopEndSamples { get; }
+
 
     void Play();
     void Pause();
     void Stop();
     void Seek(float time);
     void Seek(int sampleOffset);
+    void SetLoopPoints(float startTime, float? endTime = -1f);
+    void SetLoopPoints(int startSample, int endSample = -1);
 }
 ```
 
 **Properties:**
 
 *   `State`: The current playback state (`Stopped`, `Playing`, `Paused`).
-*   `IsLooping`: Whether looping is enabled.
+*   `IsLooping`: Whether looping is enabled or disabled (`get`, `set`).
 *   `Time`: The current playback position (in seconds).
 *   `Duration`: The total duration of the audio (in seconds).
+*   `LoopStartSeconds`: Gets the configured loop start point in seconds.
+*   `LoopEndSeconds`: Gets the configured loop end point in seconds.  -1 indicates looping to the natural end.
+*   `LoopStartSamples`: Gets the configured loop start point in samples.
+*   `LoopEndSamples`: Gets the configured loop end point in samples. -1 indicates looping to the natural end.
 
 **Methods:**
 
@@ -1127,7 +1163,9 @@ public interface ISoundPlayer
 *   `Pause()`: Pauses playback.
 *   `Stop()`: Stops playback and resets the position to the beginning.
 *   `Seek(float time)`: Seeks to the specified time (in seconds).
-*   `Seek(int sampleOffset)`: Seeks to the specified sample offset.
+*   `Seek(int sampleOffset)`: Seeks to the specified sample offset (in samples).
+*   `SetLoopPoints(float startTime, float? endTime = -1f)`: Configures custom loop points using start and end times in seconds. `endTime` is optional;  use -1 or `null` to loop to the natural end.
+*   `SetLoopPoints(int startSample, int endSample = -1)`: Configures custom loop points using start and end sample indices. `endSample` is optional; use -1 to loop to the natural end.
 
 ### Interfaces `IVisualizationContext`
 
