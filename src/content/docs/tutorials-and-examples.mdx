@@ -266,18 +266,18 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to 
 **Steps:**
 
 <Steps>
-    1. **Create a new console application:**
+1. **Create a new console application:**
 
     ```
     dotnet new console -o LoopingPlayback
     cd LoopingPlayback
     ```
-    2. **Install the SoundFlow NuGet package:**
+2. **Install the SoundFlow NuGet package:**
 
     ```
     dotnet add package SoundFlow
     ```
-    3. **Replace the contents of `Program.cs` with the following code:**
+3. **Replace the contents of `Program.cs` with the following code:**
 
     ```csharp
     using SoundFlow.Abstracts;
@@ -286,9 +286,9 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to 
     using SoundFlow.Enums;
     using SoundFlow.Providers;
     using System.IO;
-
+    
     namespace LoopingPlayback;
-
+    
     internal static class Program
     {
         private static void Main(string[] args)
@@ -331,8 +331,8 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to 
         }
     }
     ```
-    4. **Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.**
-    5. **Build and run the application:**
+4. **Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.**
+5. **Build and run the application:**
 
     ```
     dotnet run
@@ -826,76 +826,7 @@ This tutorial demonstrates how to use a custom `ProcessCallback` to process reco
 
 This code initializes the `AudioEngine` for recording and creates a `Recorder` instance, passing a custom `ProcessAudio` method as the `AudioProcessCallback`. This method will be called for each chunk of recorded audio samples. In this example, the `ProcessAudio` method simply calculates and prints the average level of the audio, but you can replace this with any custom processing logic.
 
-### 3. VAD-based Recording
-
-This tutorial demonstrates how to use the `VoiceActivityDetector` to automatically start and stop recording based on the presence of voice activity.
-
-**Steps:**
-
-<Steps>
-1. **Create a new console application:**
-
-    ```
-    dotnet new console -o VADRecording
-    cd VADRecording
-    ```
-2. **Install the SoundFlow NuGet package:**
-
-    ```
-    dotnet add package SoundFlow
-    ```
-3. **Replace the contents of `Program.cs` with the following code:**
-
-    ```csharp
-    using SoundFlow.Abstracts;
-    using SoundFlow.Backends.MiniAudio;
-    using SoundFlow.Components;
-    using SoundFlow.Enums;
-
-    namespace VADRecording;
-
-    internal static class Program
-    {
-        private static void Main(string[] args)
-        {
-            // Initialize the audio engine for recording.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Record);
-
-            // Create a VoiceActivityDetector instance.
-            var vad = new VoiceActivityDetector();
-
-            // Create a Recorder instance and pass the VAD to the constructor.
-            using var recorder = new Recorder("output.wav", sampleRate: 44100, vad: vad);
-
-            // Subscribe to the SpeechDetected event (optional).
-            vad.SpeechDetected += isDetected => Console.WriteLine($"Speech detected: {isDetected}");
-
-            // Start recording. The Recorder will automatically pause and resume based on voice activity.
-            Console.WriteLine("Recording with VAD... Press any key to stop.");
-            recorder.StartRecording();
-
-            // Wait for the user to press a key.
-            Console.ReadKey();
-
-            // Stop recording.
-            recorder.StopRecording();
-
-            Console.WriteLine("Recording stopped. Saved to output.wav");
-        }
-    }
-    ```
-4. **Build and run the application:**
-
-    ```
-    dotnet run
-    ```
-</Steps>
-
-**Explanation:**
-
-This code initializes the `AudioEngine` for recording, creates a `VoiceActivityDetector` instance, and then creates a `Recorder`, passing the `vad` instance to its constructor. The `Recorder` will now use the `VAD` to automatically pause recording when silence is detected and resume when voice activity is detected. The `SpeechDetected` event is used to print messages to the console when the VAD's state changes.
-
-### 4. Microphone Playback
+### 3. Microphone Playback
 
 This tutorial demonstrates how to capture audio from the microphone and play it back in real time using the `MicrophoneDataProvider`.
 
@@ -1539,7 +1470,7 @@ This tutorial demonstrates how to use the `LevelMeterAnalyzer` to measure the RM
             var levelMeter = new LevelMeterAnalyzer();
 
             // Connect the player's output to the level meter's input.
-            player.ConnectOutput(levelMeter);
+            player.AddAnalyzer(levelMeter);
 
             // Add the player to the master mixer (the level meter doesn't produce output).
             Mixer.Master.AddComponent(player);
@@ -1622,7 +1553,7 @@ This tutorial demonstrates how to use the `SpectrumAnalyzer` to analyze the freq
             var spectrumAnalyzer = new SpectrumAnalyzer(fftSize: 2048);
 
             // Connect the player's output to the spectrum analyzer's input.
-            player.ConnectOutput(spectrumAnalyzer);
+            player.AddAnalyzer(spectrumAnalyzer);
 
             // Add the player to the master mixer (the spectrum analyzer doesn't produce output).
             Mixer.Master.AddComponent(player);
@@ -1716,8 +1647,8 @@ This tutorial demonstrates how to use the `VoiceActivityDetector` to detect the 
             // Create a VoiceActivityDetector.
             var vad = new VoiceActivityDetector();
 
-            // Connect the player's output (or microphone input) to the VAD's input.
-            player.ConnectOutput(vad); // Or use Microphone.Default.ConnectOutput(vad) for recording
+            // Connect the VAD as an analyzer to the player's output (or microphone input).
+            player.AddAnalyzer(vad);
 
             // Subscribe to the SpeechDetected event.
             vad.SpeechDetected += isDetected => Console.WriteLine($"Speech detected: {isDetected}");
@@ -1805,7 +1736,7 @@ This tutorial demonstrates how to create a simple console-based level meter usin
             var levelMeterVisualizer = new LevelMeterVisualizer(levelMeterAnalyzer);
 
             // Connect the player's output to the level meter analyzer's input.
-            player.ConnectOutput(levelMeterAnalyzer);
+            player.AddAnalyzer(levelMeterAnalyzer);
 
             // Add the player to the master mixer (the level meter analyzer doesn't produce output).
             Mixer.Master.AddComponent(player);
@@ -2057,7 +1988,7 @@ This tutorial demonstrates how to create a simple console-based spectrum analyze
             var spectrumVisualizer = new SpectrumVisualizer(spectrumAnalyzer);
 
             // Connect the player's output to the spectrum analyzer's input.
-            player.ConnectOutput(spectrumAnalyzer);
+            player.AddAnalyzer(spectrumAnalyzer);
 
             // Add the player to the master mixer (the spectrum analyzer doesn't produce output).
             Mixer.Master.AddComponent(player);

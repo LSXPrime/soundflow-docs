@@ -62,9 +62,9 @@ using var audioEngine = new MiniAudioEngine(48000, Capability.Playback, SampleFo
     *   `Parent`: The `Mixer` to which this component belongs (if any).
 *   **Methods:**
     *   `ConnectInput(SoundComponent input)`: Connects another component's output to this component's input.
-    *   `ConnectOutput(SoundComponent output)`: Connects this component's output to another component's input.
     *   `DisconnectInput(SoundComponent input)`: Disconnects an input connection.
-    *   `DisconnectOutput(SoundComponent output)`: Disconnects an output connection.
+    *   `AddAnalyzer(AudioAnalyzer analyzer)`: Adds an `AudioAnalyzer` to this component.
+    *   `RemoveAnalyzer(AudioAnalyzer analyzer)`: Removes an `AudioAnalyzer` from this component.
     *   `AddModifier(SoundModifier modifier)`: Adds a `SoundModifier` to this component.
     *   `RemoveModifier(SoundModifier modifier)`: Removes a `SoundModifier` from this component.
 

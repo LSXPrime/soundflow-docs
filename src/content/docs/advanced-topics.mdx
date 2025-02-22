@@ -27,7 +27,7 @@ This section delves into more advanced topics related to SoundFlow, including ex
     2. **Implement `GenerateAudio`:** Override the `GenerateAudio(Span<float> buffer)` method. This is where you'll write the core audio processing code for your component.
         *   If your component generates audio (e.g., an oscillator), write samples to the provided `buffer`.
         *   If your component modifies audio, read from connected input components (using a temporary buffer if necessary), process the audio, and then write to the provided `buffer`.
-    3. **Override other methods (optional):** You can override methods like `ConnectInput`, `ConnectOutput`, `AddModifier`, etc., to customize how your component interacts with the audio graph.
+    3. **Override other methods (optional):** You can override methods like `ConnectInput`, `AddAnalyzer`, `AddModifier`, etc., to customize how your component interacts with the audio graph.
     4. **Add properties (optional):** Add properties to your component to expose configurable parameters that users can adjust.
     </Steps>
 
@@ -62,7 +62,7 @@ This section delves into more advanced topics related to SoundFlow, including ex
 
     // Connect it to the audio graph
     var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("audio.wav")));
-    player.ConnectOutput(gainComponent);
+    gainComponent.AddInput(player);
     Mixer.Master.AddComponent(gainComponent);
 
     // ...

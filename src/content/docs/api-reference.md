@@ -241,13 +241,13 @@ public abstract class SoundComponent
 
     public IReadOnlyList<SoundComponent> Inputs { get; }
     public IReadOnlyList<SoundModifier> Modifiers { get; }
-    public IReadOnlyList<SoundComponent> Outputs { get; }
+    public IReadOnlyList<AudioAnalyzer> Analyzers { get; }
 
     public void AddModifier(SoundModifier modifier);
     public void ConnectInput(SoundComponent input);
-    public void ConnectOutput(SoundComponent output);
+    public void AddAnalyzer(AudioAnalyzer analyzer);
     public void DisconnectInput(SoundComponent input);
-    public void DisconnectOutput(SoundComponent output);
+    public void RemoveAnalyzer(AudioAnalyzer analyzer);
     protected abstract void GenerateAudio(Span<float> buffer);
     internal void Process(Span<float> outputBuffer);
     public void RemoveModifier(SoundModifier modifier);
@@ -270,13 +270,13 @@ public abstract class SoundComponent
 **Methods:**
 
 * `AddModifier(SoundModifier modifier)`: Adds a sound modifier to the component.
+* `RemoveModifier(SoundModifier modifier)`: Removes a sound modifier from the component.
 * `ConnectInput(SoundComponent input)`: Connects another component's output to this component's input.
-* `ConnectOutput(SoundComponent output)`: Connects this component's output to another component's input.
 * `DisconnectInput(SoundComponent input)`: Disconnects an input from this component.
-* `DisconnectOutput(SoundComponent output)`: Disconnects an output from this component.
+* `AddAnalyzer(AudioAnalyzer analyzer)`: Adds an audio analyzer to the component.
+* `RemoveAnalyzer(AudioAnalyzer analyzer)`: Removes an audio analyzer from the component.
 * `GenerateAudio(Span<float> buffer)`: Abstract method that derived classes must implement to generate or modify audio data.
 * `Process(Span<float> outputBuffer)`: Processes the component's audio, including applying modifiers and handling input/output connections.
-* `RemoveModifier(SoundModifier modifier)`: Removes a sound modifier from the component.
 
 ### Abstracts `SoundModifier`
 
@@ -551,16 +551,22 @@ public class Recorder : IDisposable
     public Recorder(string filePath, SampleFormat sampleFormat = SampleFormat.F32, EncodingFormat encodingFormat = EncodingFormat.Wav, int sampleRate = 44100, int channels = 2, VoiceActivityDetector? vad = null);
     public Recorder(AudioProcessCallback callback, SampleFormat sampleFormat = SampleFormat.F32, EncodingFormat encodingFormat = EncodingFormat.Wav, int sampleRate = 44100, int channels = 2, VoiceActivityDetector? vad = null);
 
+    public ReadOnlyCollection<AudioAnalyzer> Analyzers { get; }
     public int Channels { get; }
     public EncodingFormat EncodingFormat { get; }
     public string FilePath { get; }
+    public ReadOnlyCollection<SoundModifier> Modifiers { get; }
     public AudioProcessCallback? ProcessCallback { get; set; }
     public int SampleRate { get; }
     public PlaybackState State { get; }
     public SampleFormat SampleFormat {get;}
 
+    public void AddAnalyzer(AudioAnalyzer analyzer);
+    public void AddModifier(SoundModifier modifier);
     public void Dispose();
     public void PauseRecording();
+    public void RemoveAnalyzer(AudioAnalyzer analyzer);
+    public void RemoveModifier(SoundModifier modifier);
     public void ResumeRecording();
     public void StartRecording();
     public void StopRecording();
@@ -569,9 +575,11 @@ public class Recorder : IDisposable
 
 **Properties:**
 
+*   `Analyzers`: Gets a read-only collection of <see cref="AudioAnalyzer"/> components applied to the recorder. Analyzers are used to process and extract data from the audio stream during recording.
 *   `Channels`: The number of channels to record.
 *   `EncodingFormat`: The encoding format for the recorded audio.
 *   `FilePath`: The path to the output file (if recording to a file).
+*   `Modifiers`: Gets a read-only collection of <see cref="SoundModifier"/> components applied to the recorder. Modifiers are applied to the audio data before encoding or processing via callback, allowing for real-time audio effects during recording.
 *   `ProcessCallback`: A callback for processing recorded audio in real time.
 *   `SampleRate`: The sample rate for recording.
 *   `State`: The current recording state (`Stopped`, `Playing`, `Paused`).
@@ -579,12 +587,15 @@ public class Recorder : IDisposable
 
 **Methods:**
 
+*   `AddAnalyzer(AudioAnalyzer analyzer)`: Adds an <see cref="AudioAnalyzer"/> to the recording pipeline. Analyzers process audio data during recording, enabling real-time analysis.
+*   `AddModifier(SoundModifier modifier)`: Adds a <see cref="SoundModifier"/> to the recording pipeline. Modifiers apply effects to the audio data in real-time as it's being recorded.
 *   `Dispose()`: Releases resources used by the recorder.
 *   `PauseRecording()`: Pauses the recording.
+*   `RemoveAnalyzer(AudioAnalyzer analyzer)`: Removes a specific <see cref="AudioAnalyzer"/> from the recording pipeline.
+*   `RemoveModifier(SoundModifier modifier)`: Removes a specific <see cref="SoundModifier"/> from the recording pipeline.
 *   `ResumeRecording()`: Resumes a paused recording.
 *   `StartRecording()`: Starts the recording.
 *   `StopRecording()`: Stops the recording.
-
 ### Components `SoundPlayer`
 
 ```csharp
@@ -715,32 +726,53 @@ public class SurroundPlayer : SoundComponent, ISoundPlayer
 ### Components `VoiceActivityDetector`
 
 ```csharp
-public class VoiceActivityDetector : SoundComponent
+public class VoiceActivityDetector : AudioAnalyzer
 {
-    public VoiceActivityDetector(int fftSize = 1024, int minHangoverFrames = 60, int maxHangoverFrames = 100, int minAttackFrames = 1, int maxAttackFrames = 8, float alpha = 0.95f, float spectralCentroidThreshold = 0.45f, float spectralFlatnessThreshold = 0.5f, float spectralFluxThreshold = 0.12f, float energyThreshold = 0.0002f);
+    public VoiceActivityDetector(int fftSize = 1024, float threshold = 0.01f, IVisualizer? visualizer = null);
 
-    public bool IsSpeech { get; }
-	
-	public override string Name { get; set; }
+    public bool IsVoiceActive { get; }
+    public int SpeechHighBand { get; set; }
+    public int SpeechLowBand { get; set; }
+    public double Threshold { get; set; }
+
+    public override string Name { get; set; }
 
     public event Action<bool>? SpeechDetected;
 
-    protected override void GenerateAudio(Span<float> buffer);
+    protected override void Analyze(Span<float> buffer);
 }
 ```
 
 **Properties:**
 
-*   `IsSpeech`: Indicates whether speech is currently detected.
-*   `Name`: The name of the voice activity detector.
+*   `IsVoiceActive`: Indicates whether voice activity is currently detected. This is a read-only property that reflects the detector's current state.
+*   `Name`: Gets or sets the name of the voice activity detector component, useful for identification and debugging.
+*   `SpeechHighBand`: Gets or sets the upper bound of the frequency range (in Hz) that the detector uses to analyze for speech. Frequencies above this band are ignored in the voice activity detection process. Default is 3400 Hz.
+*   `SpeechLowBand`: Gets or sets the lower bound of the frequency range (in Hz) that the detector focuses on for speech detection. Frequencies below this band are not considered for voice activity. Default is 300 Hz.
+*   `Threshold`: Gets or sets the detection sensitivity threshold. This value determines how sensitive the detector is to voice activity. A lower threshold value increases sensitivity, making the detector more likely to identify quieter sounds as voice activity. Default is 0.01.
 
 **Events:**
 
-*   `SpeechDetected`: Occurs when speech is detected or not detected.
+*   `SpeechDetected`: An event that is raised whenever the voice activity state changes (i.e., when speech is detected or ceases to be detected). Listeners can subscribe to this event to respond in real-time to changes in voice activity.
 
 **Methods:**
 
-*   `GenerateAudio(Span<float> buffer)`: Processes the audio buffer and updates the `IsSpeech` property based on the detection algorithm.
+*   `VoiceActivityDetector(int fftSize = 1024, float threshold = 0.01f, IVisualizer? visualizer = null)`: Constructor for the VoiceActivityDetector class. Initializes a new instance of the voice activity detector with configurable FFT size, detection threshold and optional visualizer for audio analysis visualization.
+    *   `fftSize`: `int` – The size of the FFT (Fast Fourier Transform) window used for spectral analysis. Must be a power of two. Larger FFT sizes provide finer frequency resolution but may increase processing latency. Default is 1024.
+    *   `threshold`: `float` – The sensitivity threshold for voice detection. A lower value increases sensitivity. Default is 0.01.
+    *   `visualizer`: `IVisualizer?` – An optional visualizer instance that can be attached to the analyzer for visualizing audio processing data, useful for debugging and tuning. Default is `null`.
+*   `Analyze(Span<float> buffer)`: перевіряє audio buffer та оновлює `IsVoiceActive` property на основі алгоритму детекції.
+    *   `buffer`: `Span<float>` – The audio buffer to analyze for voice activity. The audio data in this buffer is processed to determine if voice is present.
+*   `GenerateAudio(Span<float> buffer)`: This method is inherited from `AudioAnalyzer` but not directly used in `VoiceActivityDetector`. Voice Activity Detector works by analyzing the input audio buffer provided to the `Analyze` method and does not generate audio; use `Process` method instead.
+
+**Remarks:**
+
+*   **Frequency Range:** The `SpeechLowBand` and `SpeechHighBand` properties allow you to customize the frequency range that the VAD focuses on for speech detection. Speech typically falls within the 300Hz to 3400Hz range, but you may need to adjust these values depending on the characteristics of your audio and the type of speech you are detecting.
+*   **Threshold Sensitivity:** The `Threshold` property is crucial for controlling the sensitivity of the voice activity detection. Adjusting this threshold may be necessary to achieve optimal performance in different environments and with varying audio input levels.
+*   **FFT Size:** The `fftSize` parameter in the constructor determines the FFT window size. A larger FFT size provides better frequency resolution, which can be beneficial in noisy environments or when detecting subtle voice activity. However, it also increases the computational cost and latency. Ensure that the FFT size is always a power of 2 for optimal performance and compatibility with FFT algorithms.
+*   **Performance Tuning:** For optimal performance, especially in real-time applications, carefully tune the `fftSize` and `Threshold` parameters. Larger FFT sizes are more computationally intensive but offer better frequency resolution. Adjust the `Threshold` based on the ambient noise level and the desired sensitivity of voice detection.
+*   **Environment Considerations:** The ideal settings for `fftSize`, `Threshold`, `SpeechLowBand`, and `SpeechHighBand` may vary depending on the environment in which the voice activity detector is used. In noisy environments, you might need to increase the `fftSize` and adjust the `Threshold` to minimize false positives.
+*   **Visualizer for Debugging:** The optional `visualizer` parameter in the constructor is highly useful for debugging and tuning the voice activity detector. By attaching a visualizer, you can visually inspect the audio data and the detector's response, which can help in understanding and adjusting the detector's parameters for optimal performance in your specific use case.
 
 ### Enums `Capability`
 
