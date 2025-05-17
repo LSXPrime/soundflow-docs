@@ -16,9 +16,14 @@ SoundFlow is organized into the following namespaces:
 *   **`SoundFlow.Components`:** Contains concrete `SoundComponent` classes that provide various audio processing functionalities, including playback, recording, mixing, and analysis.
 *   **`SoundFlow.Enums`:** Contains enumerations used throughout the SoundFlow library to represent different states, options, and capabilities.
 *   **`SoundFlow.Exceptions`:** Contains custom exception classes used for error handling within SoundFlow.
+*   **`SoundFlow.Extensions`:** Namespace for official extensions.
+    *   **`SoundFlow.Extensions.WebRtc.Apm`:** Provides integration with the WebRTC Audio Processing Module for features like echo cancellation, noise suppression, and automatic gain control.
+        *   **`SoundFlow.Extensions.WebRtc.Apm.Components`:** Contains components utilizing the WebRTC APM, like `NoiseSuppressor`.
+        *   **`SoundFlow.Extensions.WebRtc.Apm.Modifiers`:** Contains modifiers utilizing the WebRTC APM, like `WebRtcApmModifier`.
 *   **`SoundFlow.Interfaces`:** Contains interfaces that define contracts for various functionalities, such as audio data providers, encoders, decoders, and visualizers.
 *   **`SoundFlow.Modifiers`:** Contains concrete `SoundModifier` classes that implement various audio effects.
 *   **`SoundFlow.Providers`:** Contains classes that implement the `ISoundDataProvider` interface, providing ways to load audio data from different sources.
+*   **`SoundFlow.Structs`:** Contains custom struct types used within SoundFlow, often for interop or specific data representation.
 *   **`SoundFlow.Utils`:** Contains utility classes and extension methods that provide helpful functionalities for working with audio data and performing common operations.
 *   **`SoundFlow.Visualization`:** Contains classes related to audio visualization, including analyzers and visualizers.
 
@@ -35,13 +40,14 @@ Below is a summary of the key classes and interfaces in SoundFlow.
 | [`AudioEngine`](#abstracts-audioengine)       | Abstract base class for audio engine implementations. Manages audio device, processing thread, and audio graph. |
 | [`SoundComponent`](#abstracts-soundcomponent) | Abstract base class for all audio processing units in SoundFlow. Represents a node in the audio graph.          |
 | [`SoundModifier`](#abstracts-soundmodifier)   | Abstract base class for audio effects that modify audio samples.                                                |
+| [`SoundPlayerBase`](#abstracts-soundplayerbase) | Abstract base class providing common functionality for sound playback components. Inherits from `SoundComponent` and implements `ISoundPlayer`. |
 
 ### Backends.MiniAudio
 
 | Class/Interface                                           | Description                                                                                                                                |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`MiniAudioDecoder`](#backendsminiaudio-miniaudiodecoder) | `ISoundDecoder` implementation using the `miniaudio` library.                                                                              |
-| [`MiniAudioEncoder`](#backendsminiaudio-miniaudioencoder) | `ISoundEncoder` implementation using the `miniaudio` library.                                                                              |
+| [`MiniAudioEncoder`](#backendsminiaudio-miniaudiodecoder) | `ISoundEncoder` implementation using the `miniaudio` library.                                                                              |
 | [`MiniAudioEngine`](#backendsminiaudio-miniaudioengine)   | `AudioEngine` implementation that uses the `miniaudio` library for audio I/O. Provides concrete implementations for encoding and decoding. |
 
 ### Components
@@ -54,8 +60,8 @@ Below is a summary of the key classes and interfaces in SoundFlow.
 | [`Mixer`](#components-mixer)                                   | `SoundComponent` that mixes multiple audio streams together. The `Mixer.Master` property provides access to the default root mixer.                    |
 | [`Oscillator`](#components-oscillator)                         | `SoundComponent` that generates various waveforms (sine, square, sawtooth, triangle, noise, pulse).                                                    |
 | [`Recorder`](#components-recorder)                             | `SoundComponent` that captures audio input from a recording device and allows saving it to a file or processing it via a callback.                     |
-| [`SoundPlayer`](#components-soundplayer)                       | `SoundComponent` that plays audio from an `ISoundDataProvider`. Implements the `ISoundPlayer` interface for playback control.                          |
-| [`SurroundPlayer`](#components-surroundplayer)                 | `SoundComponent` that extends `SoundPlayer` to support surround sound configurations with customizable speaker positions, delays, and panning methods. |
+| [`SoundPlayer`](#components-soundplayer)                       | `SoundPlayerBase` implementation that plays audio from an `ISoundDataProvider`.                                                                        |
+| [`SurroundPlayer`](#components-surroundplayer)                 | `SoundPlayerBase` implementation that extends `SoundPlayer` to support surround sound configurations with customizable speaker positions, delays, and panning methods. |
 | [`VoiceActivityDetector`](#components-voiceactivitydetector)   | `SoundComponent` and `AudioAnalyzer` that detects the presence of human voice in an audio stream using spectral features and energy thresholds.        |
 
 ### Enums
@@ -63,6 +69,7 @@ Below is a summary of the key classes and interfaces in SoundFlow.
 | Enum                                             | Description                                                                                                                                 |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`Capability`](#enums-capability)                | Specifies the capabilities of an `AudioEngine` instance (Playback, Recording, Mixed, Loopback).                                           |
+| [`DeviceType`](#enums-devicetype)                | Specifies the type of audio device (Playback, Capture).                                                                                     |
 | [`EncodingFormat`](#enums-encodingformat)        | Specifies the audio encoding format to use (e.g., WAV, FLAC, MP3, Vorbis).                                                              |
 | [`PlaybackState`](#enums-playbackstate)          | Specifies the current playback state of a `SoundPlayer` or `SurroundPlayer` (Stopped, Playing, Paused).                                    |
 | [`Result`](#enums-result)                        | Represents the result of an operation, including success and various error codes.                                                           |
@@ -75,6 +82,12 @@ Below is a summary of the key classes and interfaces in SoundFlow.
 | [`Oscillator.WaveformType`](#enums-oscillator-waveformtype) | Specifies the waveform type for the oscillator (Sine, Square, Sawtooth, Triangle, Noise, Pulse) |
 | [`SurroundPlayer.SpeakerConfiguration`](#enums-surroundplayer-speakerconfiguration) | Specifies the speaker configuration for the surround player (Stereo, Quad, Surround51, Surround71, Custom) |
 | [`SurroundPlayer.PanningMethod`](#enums-surroundplayer-panningmethod) | Specifies the panning method for the surround player (Linear, EqualPower, Vbap) |
+| **`SoundFlow.Extensions.WebRtc.Apm` Enums**          |                                                                                                                                             |
+| [`ApmError`](#extensions-webrtc-apm-apmerror)     | Error codes returned by the WebRTC Audio Processing Module.                                                                                |
+| [`NoiseSuppressionLevel`](#extensions-webrtc-apm-noisesuppressionlevel) | Specifies noise suppression levels (Low, Moderate, High, VeryHigh).                                                                  |
+| [`GainControlMode`](#extensions-webrtc-apm-gaincontrolmode) | Specifies gain controller modes (AdaptiveAnalog, AdaptiveDigital, FixedDigital).                                                        |
+| [`DownmixMethod`](#extensions-webrtc-apm-downmixmethod) | Specifies methods for downmixing audio channels (AverageChannels, UseFirstChannel).                                                    |
+| [`RuntimeSettingType`](#extensions-webrtc-apm-runtimesettingtype) | Specifies types of runtime settings for the WebRTC APM.                                                                        |
 
 ### Exceptions
 
@@ -82,14 +95,27 @@ Below is a summary of the key classes and interfaces in SoundFlow.
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [`BackendException`](#exceptions-backendexception) | Thrown when an error occurs in a specific audio backend.                                     |
 
+### Extensions.WebRtc.Apm
+
+| Class/Interface                                                                 | Description                                                                                                                                       |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`AudioProcessingModule`](#extensions-webrtc-apm-audioprocessingmodule)         | Provides access to the native WebRTC Audio Processing Module for advanced audio processing like AEC, NS, AGC.                                     |
+| [`ApmConfig`](#extensions-webrtc-apm-apmconfig)                                 | Represents a configuration for the `AudioProcessingModule`, allowing enabling/disabling and setting parameters for various APM features.            |
+| [`StreamConfig`](#extensions-webrtc-apm-streamconfig)                           | Represents a stream configuration (sample rate, channels) for audio processing within the APM.                                                    |
+| [`ProcessingConfig`](#extensions-webrtc-apm-processingconfig)                   | Holds multiple `StreamConfig` instances for input, output, and reverse streams for the APM.                                                       |
+| **Components Namespace**                                                        |                                                                                                                                                   |
+| [`NoiseSuppressor`](#extensions-webrtc-apm-components-noisesuppressor)          | A component for offline/batch noise suppression using WebRTC APM, processing audio from an `ISoundDataProvider`.                                  |
+| **Modifiers Namespace**                                                         |                                                                                                                                                   |
+| [`WebRtcApmModifier`](#extensions-webrtc-apm-modifiers-webrtcapmmodifier)       | A `SoundModifier` that applies WebRTC APM features (AEC, NS, AGC, etc.) in real-time to an audio stream within the SoundFlow graph. Configurable. |
+
 ### Interfaces
 
 | Interface                                           | Description                                                                                                                                  |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`ISoundDataProvider`](#interfaces-isounddataprovider) | Defines a standard way to access audio data from various sources.                                                                         |
+| [`ISoundDataProvider`](#interfaces-isounddataprovider) | Defines a standard way to access audio data from various sources. Implements `IDisposable`.                                                |
 | [`ISoundDecoder`](#interfaces-isounddecoder)         | Defines the contract for decoding audio data from a specific format into raw audio samples.                                                 |
 | [`ISoundEncoder`](#interfaces-isoundencoder)         | Defines the contract for encoding raw audio samples into a specific format.                                                                 |
-| [`ISoundPlayer`](#interfaces-isoundplayer)           | Defines the contract for controlling audio playback (Play, Pause, Stop, Seek).                                                             |
+| [`ISoundPlayer`](#interfaces-isoundplayer)           | Defines the contract for controlling audio playback (Play, Pause, Stop, Seek, Looping, Speed, Volume).                                       |
 | [`IVisualizationContext`](#interfaces-ivisualizationcontext) | Provides drawing methods for rendering audio visualizations. The implementation depends on the specific UI framework used.               |
 | [`IVisualizer`](#interfaces-ivisualizer)             | Defines the contract for components that visualize audio data.                                                                            |
 
@@ -108,23 +134,32 @@ Below is a summary of the key classes and interfaces in SoundFlow.
 | [`ParametricEqualizer`](#modifiers-parametricequalizer)             | Provides precise control over the frequency spectrum with multiple configurable bands, each of which can be set as a peaking, low-shelf, high-shelf, band-pass, notch, low-pass, or high-pass filter. |
 | [`StereoChorusModifier`](#modifiers-stereochorusmodifier)           | Creates a stereo chorus effect with independent processing for the left and right channels.                                                                                                           |
 | [`TrebleBoostModifier`](#modifiers-trebleboostmodifier)             | Enhances high-frequency content using a high-pass filter.                                                                                                                                             |
+| [`WebRtcApmModifier`](#extensions-webrtc-apm-modifiers-webrtcapmmodifier) (from `SoundFlow.Extensions.WebRtc.Apm.Modifiers`) | Applies WebRTC APM features like echo cancellation, noise suppression, and AGC in real-time. |
 
 ### Providers
 
 | Class                                                         | Description                                                                                                                                  |
 | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`AssetDataProvider`](#providers-assetdataprovider)           | `ISoundDataProvider` implementation that reads audio data from a byte array (useful for in-memory assets).                                   |
-| [`StreamDataProvider`](#providers-streamdataprovider)         | `ISoundDataProvider` implementation that reads audio data from a generic `Stream` (supports seeking if the stream is seekable).              |
-| [`MicrophoneDataProvider`](#providers-microphonedataprovider) | `ISoundDataProvider` implementation that captures and provides audio data from the microphone in real-time.                                  |
-| [`ChunkedDataProvider`](#providers-chunkeddataprovider)       | `ISoundDataProvider` implementation that reads and decodes audio data from a file or stream in chunks, improving efficiency for large files. |
-| [`NetworkDataProvider`](#providers-networkdataprovider)       | `ISoundDataProvider` implementation that provides audio data from a network source (direct URL or HLS playlist).                             |
+| [`AssetDataProvider`](#providers-assetdataprovider)           | `ISoundDataProvider` implementation that reads audio data from a byte array (useful for in-memory assets). Implements `IDisposable`.            |
+| [`StreamDataProvider`](#providers-streamdataprovider)         | `ISoundDataProvider` implementation that reads audio data from a generic `Stream` (supports seeking if the stream is seekable). Implements `IDisposable`. |
+| [`MicrophoneDataProvider`](#providers-microphonedataprovider) | `ISoundDataProvider` implementation that captures and provides audio data from the microphone in real-time. Implements `IDisposable`.            |
+| [`ChunkedDataProvider`](#providers-chunkeddataprovider)       | `ISoundDataProvider` implementation that reads and decodes audio data from a file or stream in chunks, improving efficiency for large files. Implements `IDisposable`. |
+| [`NetworkDataProvider`](#providers-networkdataprovider)       | `ISoundDataProvider` implementation that provides audio data from a network source (direct URL or HLS playlist). Implements `IDisposable`.   |
+| [`RawDataProvider`](#providers-rawdataprovider)               | `ISoundDataProvider` implementation for reading raw PCM audio data from a stream. Implements `IDisposable`.                                   |
+
+### Structs
+
+| Struct                                       | Description                                                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [`DeviceInfo`](#structs-deviceinfo)          | Represents information about an audio device, including ID, name, and supported formats.         |
+| [`NativeDataFormat`](#structs-nativedataformat) | Represents a native data format supported by an audio device (format, channels, sample rate). |
 
 ### Utils
 
 | Class                                       | Description                                                                                                                                                                                                 |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Extensions`](#utils-extensions)           | Provides extension methods for working with audio data and other utility functions.                                                                                                                             |
-| [`MathHelper`](#utils-mathhelper)           | Provides mathematical functions and algorithms used in audio processing, including optimized FFT (Fast Fourier Transform) implementations using SIMD instructions (when available) and a Hamming window function. |
+| [`Extensions`](#utils-extensions)           | Provides extension methods for working with audio data and other utility functions, including `ReadArray<T>` for reading structures from native memory.                                                                                                                             |
+| [`MathHelper`](#utils-mathhelper)           | Provides mathematical functions and algorithms used in audio processing, including optimized FFT, window functions, `Mod`, and `PrincipalAngle`. |
 
 ### Visualization
 
@@ -177,14 +212,20 @@ public abstract class AudioEngine : IDisposable
     public float InverseSampleRate { get; }
     public SampleFormat SampleFormat { get; }
     public int SampleRate { get; }
+    public DeviceInfo? CurrentPlaybackDevice { get; protected set; }
+    public DeviceInfo? CurrentCaptureDevice { get; protected set; }
+    public int CaptureDeviceCount { get; protected set; }
+    public int PlaybackDeviceCount { get; protected set; }
+    public DeviceInfo[] PlaybackDevices { get; protected set; }
+    public DeviceInfo[] CaptureDevices { get; protected set; }
 
     public static event AudioProcessCallback? OnAudioProcessed;
 
     ~AudioEngine();
 
     protected abstract void CleanupAudioDevice();
-    protected internal abstract ISoundDecoder CreateDecoder(Stream stream);
-    protected internal abstract ISoundEncoder CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate);
+    public abstract ISoundDecoder CreateDecoder(Stream stream);
+    public abstract ISoundEncoder CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate);
     protected virtual void Dispose(bool disposing);
     protected abstract void InitializeAudioDevice();
     protected abstract void ProcessAudioData();
@@ -192,6 +233,9 @@ public abstract class AudioEngine : IDisposable
     protected void ProcessGraph(nint output, int length);
     public void SoloComponent(SoundComponent component);
     public void UnsoloComponent(SoundComponent component);
+    public abstract void SwitchDevice(DeviceInfo deviceInfo, DeviceType type = DeviceType.Playback);
+    public abstract void SwitchDevices(DeviceInfo? playbackDeviceInfo, DeviceInfo? captureDeviceInfo);
+    public abstract void UpdateDevicesInfo();
     public void Dispose();
 }
 ```
@@ -205,6 +249,13 @@ public abstract class AudioEngine : IDisposable
 *   `InverseSampleRate`: The inverse of the sample rate (1 / `SampleRate`).
 *   `SampleFormat`: The audio sample format.
 *   `SampleRate`: The audio sample rate.
+*   `CurrentPlaybackDevice`: Gets the currently selected playback device.
+*   `CurrentCaptureDevice`: Gets the currently selected capture device.
+*   `CaptureDeviceCount`: Gets the number of available capture devices.
+*   `PlaybackDeviceCount`: Gets the number of available playback devices.
+*   `PlaybackDevices`: Gets an array of available playback devices.
+*   `CaptureDevices`: Gets an array of available capture devices.
+
 
 **Events:**
 
@@ -213,8 +264,8 @@ public abstract class AudioEngine : IDisposable
 **Methods:**
 
 *   `CleanupAudioDevice()`: Abstract method to be implemented by derived classes to clean up audio device resources.
-*   `CreateDecoder(Stream stream)`: Abstract method to be implemented by derived classes to create an `ISoundDecoder` for the specific backend.
-*   `CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate)`: Abstract method to be implemented by derived classes to create an `ISoundEncoder` for the specific backend.
+*   `CreateDecoder(Stream stream)`: Creates an `ISoundDecoder` for the specific backend.
+*   `CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate)`: Creates an `ISoundEncoder` for the specific backend.
 *   `Dispose(bool disposing)`: Releases resources used by the engine.
 *   `InitializeAudioDevice()`: Abstract method to be implemented by derived classes to initialize the audio device.
 *   `ProcessAudioData()`: Abstract method to be implemented by derived classes to perform the main audio processing loop.
@@ -222,6 +273,9 @@ public abstract class AudioEngine : IDisposable
 *   `ProcessGraph(nint output, int length)`: Processes the audio graph and outputs to the specified buffer.
 *   `SoloComponent(SoundComponent component)`: Solos a component in the audio graph.
 *   `UnsoloComponent(SoundComponent component)`: Unsolos a component in the audio graph.
+*   `SwitchDevice(DeviceInfo deviceInfo, DeviceType type = DeviceType.Playback)`: Switches the audio engine to use the specified device.
+*   `SwitchDevices(DeviceInfo? playbackDeviceInfo, DeviceInfo? captureDeviceInfo)`: Switches playback and/or capture devices.
+*   `UpdateDevicesInfo()`: Retrieves and updates the list of available audio devices.
 *   `Dispose()`: Public method to dispose of the engine and its resources.
 
 ### Abstracts `SoundComponent`
@@ -231,7 +285,7 @@ public abstract class SoundComponent
 {
     protected SoundComponent();
 
-    public virtual float Pan { get; set; }
+    public virtual float Pan { get; set; } // Range 0.0 (Left) to 1.0 (Right), 0.5 is Center
     public virtual string Name { get; set; }
     public Mixer? Parent { get; set; }
     public virtual bool Solo { get; set; }
@@ -256,7 +310,7 @@ public abstract class SoundComponent
 
 **Properties:**
 
-* `Pan`: The panning of the component's output (-1 to 1, where -1 is left, 0 is center, and 1 is right).
+* `Pan`: The panning of the component's output (0.0 for full left, 0.5 for center, 1.0 for full right, using equal-power panning).
 * `Name`: The name of the component.
 * `Parent`: The parent mixer of this component.
 * `Solo`: Whether the component is soloed.
@@ -265,7 +319,7 @@ public abstract class SoundComponent
 * `Mute`: Whether the component is muted.
 * `Inputs`: Read-only list of connected input components.
 * `Modifiers`: Read-only list of applied modifiers.
-* `Outputs`: Read-only list of connected output components.
+* `Analyzers`: Read-only list of attached audio analyzers.
 
 **Methods:**
 
@@ -286,6 +340,7 @@ public abstract class SoundModifier
     public SoundModifier();
 
     public virtual string Name { get; set; }
+    public bool Enabled { get; set; } = true;
 
     public abstract float ProcessSample(float sample, int channel);
     public virtual void Process(Span<float> buffer);
@@ -295,11 +350,82 @@ public abstract class SoundModifier
 **Properties:**
 
 *   `Name`: The name of the modifier.
+*   `Enabled`: Gets or sets whether the modifier is active and should process audio. Defaults to true.
 
 **Methods:**
 
 *   `ProcessSample(float sample, int channel)`: Abstract method to be implemented by derived classes to process a single audio sample.
-*   `Process(Span<float> buffer)`: Processes a buffer of audio data.
+*   `Process(Span<float> buffer)`: Processes a buffer of audio data. Applies `ProcessSample` to each sample if not overridden.
+
+### Abstracts `SoundPlayerBase`
+
+```csharp
+public abstract class SoundPlayerBase : SoundComponent, ISoundPlayer
+{
+    protected SoundPlayerBase(ISoundDataProvider dataProvider);
+
+    public float PlaybackSpeed { get; set; }
+    public PlaybackState State { get; private set; }
+    public bool IsLooping { get; set; }
+    public float Time { get; }
+    public float SourceTimeSeconds { get; } // Time in normal playback speed (1.0)
+    public float Duration { get; }
+    public int LoopStartSamples { get; }
+    public int LoopEndSamples { get; }
+    public float LoopStartSeconds { get; }
+    public float LoopEndSeconds { get; }
+    // Volume is inherited from SoundComponent
+
+    public event EventHandler<EventArgs>? PlaybackEnded;
+
+    protected override void GenerateAudio(Span<float> output);
+    protected virtual void HandleEndOfStream(Span<float> remainingOutputBuffer);
+    protected virtual void OnPlaybackEnded();
+
+    public void Play();
+    public void Pause();
+    public void Stop();
+    public bool Seek(TimeSpan time, SeekOrigin seekOrigin = SeekOrigin.Begin);
+    public bool Seek(float time);
+    public bool Seek(int sampleOffset);
+    public void SetLoopPoints(float startTime, float? endTime = -1f);
+    public void SetLoopPoints(int startSample, int endSample = -1);
+    public void SetLoopPoints(TimeSpan startTime, TimeSpan? endTime = null);
+}
+```
+
+**Properties:**
+
+*   `PlaybackSpeed`: Gets or sets the playback speed (1.0 is normal).
+*   `State`: Gets the current playback state (`Stopped`, `Playing`, `Paused`).
+*   `IsLooping`: Gets or sets whether looping is enabled.
+*   `Time`: Gets the current playback position in seconds, affected by `PlaybackSpeed`.
+*   `SourceTimeSeconds`: Gets the current playback position in seconds as if `PlaybackSpeed` were 1.0.
+*   `Duration`: Gets the total duration of the audio in seconds.
+*   `LoopStartSamples`: Gets the loop start point in samples.
+*   `LoopEndSamples`: Gets the loop end point in samples (-1 for end of audio).
+*   `LoopStartSeconds`: Gets the loop start point in seconds.
+*   `LoopEndSeconds`: Gets the loop end point in seconds (-1 for end of audio).
+*   `Volume`: (Inherited from `SoundComponent`) Gets or sets the volume of the player.
+
+**Events:**
+
+*   `PlaybackEnded`: Occurs when playback reaches the end of the audio (not raised during looping).
+
+**Methods:**
+
+*   `GenerateAudio(Span<float> output)`: (Protected Override) Core audio generation logic, handles reading from data provider, resampling for playback speed, and looping.
+*   `HandleEndOfStream(Span<float> remainingOutputBuffer)`: (Protected Virtual) Handles logic when the data provider reaches its end (looping or stopping).
+*   `OnPlaybackEnded()`: (Protected Virtual) Invokes the `PlaybackEnded` event.
+*   `Play()`: Starts or resumes playback.
+*   `Pause()`: Pauses playback.
+*   `Stop()`: Stops playback and resets the position to the beginning.
+*   `Seek(TimeSpan time, SeekOrigin seekOrigin = SeekOrigin.Begin)`: Seeks to a specific time using `TimeSpan`. Returns `true` if successful.
+*   `Seek(float time)`: Seeks to a specific time in seconds. Returns `true` if successful.
+*   `Seek(int sampleOffset)`: Seeks to a specific sample offset. Returns `true` if successful.
+*   `SetLoopPoints(float startTime, float? endTime = -1f)`: Configures loop points using start/end times in seconds.
+*   `SetLoopPoints(int startSample, int endSample = -1)`: Configures loop points using start/end sample indices.
+*   `SetLoopPoints(TimeSpan startTime, TimeSpan? endTime = null)`: Configures loop points using `TimeSpan`.
 
 ### Backends.MiniAudio `MiniAudioDecoder`
 
@@ -307,6 +433,10 @@ public abstract class SoundModifier
 internal sealed unsafe class MiniAudioDecoder : ISoundDecoder
 {
     internal MiniAudioDecoder(Stream stream);
+
+    public bool IsDisposed { get; private set; }
+    public int Length { get; private set; } // Length can be updated after initial check
+    public SampleFormat SampleFormat { get; }
 
     public event EventHandler<EventArgs>? EndOfStreamReached;
 
@@ -319,7 +449,7 @@ internal sealed unsafe class MiniAudioDecoder : ISoundDecoder
 **Properties:**
 
 * `IsDisposed`: Indicates whether the decoder has been disposed.
-* `Length`: The total length of the decoded audio data in samples.
+* `Length`: The total length of the decoded audio data in samples. *Note: Can be updated after initial checks if the stream length was not immediately available.*
 * `SampleFormat`: The sample format of the decoded audio data.
 
 **Events:**
@@ -328,9 +458,9 @@ internal sealed unsafe class MiniAudioDecoder : ISoundDecoder
 
 **Methods:**
 
-* `Decode(Span<float> samples)`: Decodes a portion of the audio stream into the provided buffer.
+* `Decode(Span<float> samples)`: Decodes a portion of the audio stream into the provided buffer. Internally synchronized.
 * `Dispose()`: Releases the resources used by the decoder.
-* `Seek(int offset)`: Seeks to the specified offset within the audio stream (in samples).
+* `Seek(int offset)`: Seeks to the specified offset within the audio stream (in samples). Internally synchronized.
 
 ### Backends.MiniAudio `MiniAudioEncoder`
 
@@ -365,10 +495,13 @@ public sealed class MiniAudioEngine : AudioEngine
     public MiniAudioEngine(int sampleRate, Capability capability, SampleFormat sampleFormat = SampleFormat.F32, int channels = 2);
 
     protected override void CleanupAudioDevice();
-    protected internal override ISoundDecoder CreateDecoder(Stream stream);
-    protected internal override ISoundEncoder CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate);
+    public override ISoundDecoder CreateDecoder(Stream stream);
+    public override ISoundEncoder CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate); // Now public
     protected override void InitializeAudioDevice();
     protected override void ProcessAudioData();
+    public override void SwitchDevice(DeviceInfo deviceInfo, DeviceType type = DeviceType.Playback);
+    public override void SwitchDevices(DeviceInfo? playbackDeviceInfo, DeviceInfo? captureDeviceInfo);
+    public override void UpdateDevicesInfo();
 }
 ```
 
@@ -377,8 +510,11 @@ public sealed class MiniAudioEngine : AudioEngine
 *   `CleanupAudioDevice()`: Cleans up the audio device resources.
 *   `CreateDecoder(Stream stream)`: Creates a `MiniAudioDecoder` instance.
 *   `CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate)`: Creates a `MiniAudioEncoder` instance.
-*   `InitializeAudioDevice()`: Initializes the audio device using `miniaudio`.
-*   `ProcessAudioData()`: Implements the main audio processing loop using `miniaudio`.
+*   `InitializeAudioDevice()`: Initializes the audio device using `miniaudio`, including context initialization.
+*   `ProcessAudioData()`: Implements the main audio processing loop using `miniaudio` (typically via callbacks).
+*   `SwitchDevice(DeviceInfo deviceInfo, DeviceType type = DeviceType.Playback)`: Switches the playback or capture device.
+*   `SwitchDevices(DeviceInfo? playbackDeviceInfo, DeviceInfo? captureDeviceInfo)`: Switches both playback and capture devices if specified.
+*   `UpdateDevicesInfo()`: Retrieves and updates the list of available playback and capture devices from MiniAudio.
 
 ### Components `EnvelopeGenerator`
 
@@ -599,128 +735,50 @@ public class Recorder : IDisposable
 ### Components `SoundPlayer`
 
 ```csharp
-public sealed class SoundPlayer : SoundComponent, ISoundPlayer
+public sealed class SoundPlayer : SoundPlayerBase
 {
     public SoundPlayer(ISoundDataProvider dataProvider);
-
-    public float Duration { get; }
-    public bool IsLooping { get; set; }
-    public int LoopStartSamples { get; }
-    public int LoopEndSamples { get; }
-    public float LoopStartSeconds { get; }
-    public float LoopEndSeconds { get; }
-    public override string Name { get; set; }
-    public PlaybackState State { get; }
-    public float Time { get; }
-
-    public event EventHandler<EventArgs>? PlaybackEnded;
-
-    protected override void GenerateAudio(Span<float> output);
-    public void Pause();
-    public void Play();
-    public void Seek(float time);
-    public void Seek(int sampleOffset);
-    public void SetLoopPoints(float startTime, float? endTime = -1f);
-    public void SetLoopPoints(int startSample, int endSample = -1);
-    public void Stop();
+    public override string Name { get; set; } // Overrides SoundPlayerBase's default
 }
 ```
+Inherits all playback functionality, properties, and events from `SoundPlayerBase`.
 
 **Properties:**
-
-*   `Duration`: The total duration of the audio in seconds.
-*   `IsLooping`: Gets or sets whether looping is enabled.
-*   `LoopStartSamples`: Gets the configured loop start point in samples.
-*   `LoopEndSamples`: Gets the configured loop end point in samples. -1 indicates looping to the natural end of the audio.
-*   `LoopStartSeconds`: Gets the configured loop start point in seconds.
-*   `LoopEndSeconds`: Gets the configured loop end point in seconds. -1 indicates looping to the natural end of the audio.
-*   `Name`: The name of the sound player component.
-*   `State`: The current playback state (`Stopped`, `Playing`, `Paused`).
-*   `Time`: The current playback position in seconds.
-
-**Events:**
-
-*   `PlaybackEnded`: Occurs when playback reaches the natural end of the audio (not raised during looping).
-
-**Methods:**
-
-*   `GenerateAudio(Span<float> output)`: Reads audio data from the `ISoundDataProvider`, applies looping if enabled, and outputs the processed audio.
-*   `Pause()`: Pauses playback.
-*   `Play()`: Starts or resumes playback.
-*   `Seek(float time)`: Seeks to the specified playback time in seconds.
-*   `Seek(int sampleOffset)`: Seeks to the specified playback position by sample offset.
-*   `SetLoopPoints(float startTime, float? endTime = -1f)`: Configures custom loop points using start and end times in seconds. `endTime` is optional; use -1 or `null` to loop to the natural end.
-*   `SetLoopPoints(int startSample, int endSample = -1)`: Configures custom loop points using start and end sample indices. `endSample` is optional; use -1 to loop to the natural end.
-*   `Stop()`: Stops playback and resets the playback position to the beginning.
+* `Name`: The name of the sound player component (default: "Sound Player").
 
 ### Components `SurroundPlayer`
 
 ```csharp
-public class SurroundPlayer : SoundComponent, ISoundPlayer
+public sealed class SurroundPlayer : SoundPlayerBase
 {
     public SurroundPlayer(ISoundDataProvider dataProvider);
 
-    public float Duration { get; }
-    public bool IsLooping { get; set; }
-    public int LoopStartSamples { get; }
-    public int LoopEndSamples { get; }
-    public float LoopStartSeconds { get; }
-    public float LoopEndSeconds { get; }
+    public override string Name { get; set; } // Overrides SoundPlayerBase's default
     public Vector2 ListenerPosition { get; set; }
-    public override string Name { get; set; }
     public PanningMethod Panning { get; set; }
-    public PlaybackState State { get; }
-    public float Time { get; }
     public VbapParameters VbapParameters { get; set; }
     public SurroundConfiguration SurroundConfig { get; set; }
-    public SpeakerConfiguration SpeakerConfig { get; set; } //moved down for better grouping
-
-    public event EventHandler<EventArgs>? PlaybackEnded;
+    public SpeakerConfiguration SpeakerConfig { get; set; }
 
     protected override void GenerateAudio(Span<float> output);
-    public void Pause();
-    public void Play();
-    public void Seek(float time);
-    public void Seek(int sampleOffset);
-    public void SetLoopPoints(float startTime, float? endTime = -1f);
-    public void SetLoopPoints(int startSample, int endSample = -1);
     public void SetSpeakerConfiguration(SpeakerConfiguration config);
-    public void Stop();
+    // Inherits Play, Pause, Stop, Seek, IsLooping, etc. from SoundPlayerBase
 }
 ```
+Inherits base playback functionality from `SoundPlayerBase` and adds surround-specific features.
 
 **Properties:**
-
-*   `Duration`: The total duration of the audio in seconds.
-*   `IsLooping`: Gets or sets whether looping is enabled.
-*   `LoopStartSamples`: Gets the configured loop start point in samples.
-*   `LoopEndSamples`: Gets the configured loop end point in samples. -1 indicates looping to the natural end of the audio.
-*   `LoopStartSeconds`: Gets the configured loop start point in seconds.
-*   `LoopEndSeconds`: Gets the configured loop end point in seconds. -1 indicates looping to the natural end of the audio.
+*   `Name`: The name of the surround player component (default: "Surround Player").
 *   `ListenerPosition`: The position of the listener in the surround sound field (Vector2).
-*   `Name`: The name of the surround player component.
 *   `Panning`: Gets or sets the panning method to use for surround sound (`Linear`, `EqualPower`, `VBAP`).
 *   `SpeakerConfig`: Gets or sets the speaker configuration (`Stereo`, `Quad`, `Surround51`, `Surround71`, `Custom`).
-*   `State`: The current playback state (`Stopped`, `Playing`, `Paused`).
-*   `Time`: The current playback position in seconds.
 *   `VbapParameters`: Gets or sets parameters for Vector Base Amplitude Panning (VBAP).
 *   `SurroundConfig`: Gets or sets the custom surround configuration when `SpeakerConfig` is set to `Custom`.
 
-**Events:**
-
-*   `PlaybackEnded`: Occurs when playback reaches the natural end of the audio (not raised during looping).
-
 **Methods:**
-
-*   `GenerateAudio(Span<float> output)`: Reads audio data from the `ISoundDataProvider`, applies surround processing and looping if enabled, and outputs the processed audio.
-*   `Pause()`: Pauses playback.
-*   `Play()`: Starts or resumes playback.
-*   `Seek(float time)`: Seeks to the specified playback time in seconds.
-*   `Seek(int sampleOffset)`: Seeks to the specified playback position by sample offset.
-*   `SetLoopPoints(float startTime, float? endTime = -1f)`: Configures custom loop points using start and end times in seconds. `endTime` is optional; use -1 or `null` to loop to the natural end.
-*   `SetLoopPoints(int startSample, int endSample = -1)`: Configures custom loop points using start and end sample indices. `endSample` is optional; use -1 to loop to the natural end.
+*   `GenerateAudio(Span<float> output)`: (Overrides `SoundPlayerBase`) Reads audio data, applies resampling, then applies surround processing and looping if enabled.
 *   `SetSpeakerConfiguration(SpeakerConfiguration config)`: Sets the speaker configuration for surround sound playback.
-*   `Stop()`: Stops playback and resets the playback position to the beginning.
+*   `Seek(int sampleOffset)`: (Overrides `SoundPlayerBase`) Seeks and re-initializes delay lines for surround processing.
 
 
 ### Components `VoiceActivityDetector`
@@ -793,6 +851,19 @@ public enum Capability
 *   `Record`: Indicates recording capability.
 *   `Mixed`: Indicates both playback and recording capability.
 *   `Loopback`: Indicates loopback capability (recording system audio output).
+
+### Enums `DeviceType`
+
+```csharp
+public enum DeviceType
+{
+    Playback,
+    Capture
+}
+```
+**Values:**
+*   `Playback`: Device used for audio playback.
+*   `Capture`: Device used for audio capture.
 
 ### Enums `EncodingFormat`
 
@@ -1047,27 +1118,117 @@ public enum PanningMethod
 *   `EqualPower`: Equal power panning.
 *   `Vbap`: Vector Base Amplitude Panning (VBAP).
 
-### Exceptions `BackendException`
+### Extensions.WebRtc.Apm (New Namespace)
 
+#### `AudioProcessingModule` (Class)
 ```csharp
-public class BackendException : Exception
+public class AudioProcessingModule : IDisposable
 {
-    public BackendException(string backendName, Result result, string message);
-
-    public string Backend { get; }
-    public Result Result { get; }
+    public AudioProcessingModule();
+    public ApmError ApplyConfig(ApmConfig config);
+    public ApmError Initialize();
+    public ApmError ProcessStream(float[][] src, StreamConfig inputConfig, StreamConfig outputConfig, float[][] dest);
+    public ApmError ProcessReverseStream(float[][] src, StreamConfig inputConfig, StreamConfig outputConfig, float[][] dest);
+    // ... other methods for setting delays, levels, runtime settings, getting info, AEC dump ...
+    public static int GetFrameSize(int sampleRateHz);
+    public void Dispose();
 }
 ```
+**Description:** Provides low-level access to the WebRTC Audio Processing Module. It's responsible for initializing the APM, applying configurations, and processing audio frames. Generally used internally by `WebRtcApmModifier` and `NoiseSuppressor`.
 
-**Properties:**
+#### `ApmConfig` (Class)
+```csharp
+public class ApmConfig : IDisposable
+{
+    public ApmConfig();
+    public void SetEchoCanceller(bool enabled, bool mobileMode);
+    public void SetNoiseSuppression(bool enabled, NoiseSuppressionLevel level);
+    public void SetGainController1(bool enabled, GainControlMode mode, int targetLevelDbfs, int compressionGainDb, bool enableLimiter);
+    public void SetGainController2(bool enabled);
+    public void SetHighPassFilter(bool enabled);
+    public void SetPreAmplifier(bool enabled, float fixedGainFactor);
+    public void SetPipeline(int maxInternalRate, bool multiChannelRender, bool multiChannelCapture, DownmixMethod downmixMethod);
+    public void Dispose();
+}
+```
+**Description:** Used to configure the features of the `AudioProcessingModule` such as echo cancellation, noise suppression, gain control, etc.
 
-*   `Backend`: The name of the audio backend where the exception occurred.
-*   `Result`: The result code associated with the exception.
+#### `StreamConfig` (Class)
+```csharp
+public class StreamConfig : IDisposable
+{
+    public StreamConfig(int sampleRateHz, int numChannels);
+    public int SampleRateHz { get; }
+    public int NumChannels { get; }
+    public void Dispose();
+}
+```
+**Description:** Defines the properties (sample rate, number of channels) of an audio stream being processed by the APM.
+
+#### `ProcessingConfig` (Class)
+This class holds multiple `StreamConfig` instances for different parts of the APM pipeline (input, output, reverse input, reverse output).
+
+#### `NoiseSuppressor` (Component - `SoundFlow.Extensions.WebRtc.Apm.Components`)
+```csharp
+public class NoiseSuppressor : IDisposable
+{
+    public NoiseSuppressor(ISoundDataProvider dataProvider, int sampleRate, int numChannels, NoiseSuppressionLevel suppressionLevel = NoiseSuppressionLevel.High, bool useMultichannelProcessing = false);
+    public event ProcessedAudioChunkHandler? OnAudioChunkProcessed;
+    public float[] ProcessAll();
+    public void ProcessChunks(Action<ReadOnlyMemory<float>>? chunkHandler = null);
+    public void Dispose();
+}
+```
+**Description:** A component for offline/batch noise suppression using WebRTC APM. It takes an `ISoundDataProvider`, processes its audio, and outputs the cleaned audio either as a whole or in chunks.
+**Key Members:**
+*   `NoiseSuppressor(ISoundDataProvider dataProvider, int sampleRate, int numChannels, ...)`: Constructor.
+*   `OnAudioChunkProcessed` (event): Raised when a chunk of audio is processed.
+*   `ProcessAll()`: Processes the entire audio stream and returns it.
+*   `ProcessChunks()`: Processes audio in chunks, raising `OnAudioChunkProcessed`.
+
+#### `WebRtcApmModifier` (Modifier - `SoundFlow.Extensions.WebRtc.Apm.Modifiers`)
+```csharp
+public sealed class WebRtcApmModifier : SoundModifier, IDisposable
+{
+    public WebRtcApmModifier(
+        bool aecEnabled = false, bool aecMobileMode = false, int aecLatencyMs = 40,
+        bool nsEnabled = false, NoiseSuppressionLevel nsLevel = NoiseSuppressionLevel.High,
+        // ... other AGC, HPF, PreAmp, Pipeline settings ...
+    );
+
+    public override string Name { get; set; }
+    public EchoCancellationSettings EchoCancellation { get; }
+    public NoiseSuppressionSettings NoiseSuppression { get; }
+    public AutomaticGainControlSettings AutomaticGainControl { get; }
+    public ProcessingPipelineSettings ProcessingPipeline { get; }
+    public bool HighPassFilterEnabled { get; set; }
+    public bool PreAmplifierEnabled { get; set; }
+    public float PreAmplifierGainFactor { get; set; }
+    public float PostProcessGain { get; set; }
+
+    public override void Process(Span<float> buffer);
+    public override float ProcessSample(float sample, int channel); // Throws NotSupportedException
+    public void Dispose();
+}
+```
+**Description:** A `SoundModifier` that applies various WebRTC APM features (AEC, NS, AGC, HPF, PreAmp) to an audio stream in real-time.
+**Key Members:**
+*   Constructor with detailed initial settings.
+*   Properties for configuring each APM feature (`EchoCancellation`, `NoiseSuppression`, `AutomaticGainControl`, `ProcessingPipeline`, `HighPassFilterEnabled`, etc.).
+*   `Process(Span<float> buffer)`: Core processing logic.
+*   `Dispose()`: Releases native APM resources.
+
+#### Enums for WebRTC APM
+*   `ApmError`: Error codes.
+*   `NoiseSuppressionLevel`: Low, Moderate, High, VeryHigh.
+*   `GainControlMode`: AdaptiveAnalog, AdaptiveDigital, FixedDigital.
+*   `DownmixMethod`: AverageChannels, UseFirstChannel.
+*   `RuntimeSettingType`: Types for runtime APM settings.
 
 ### Interfaces `ISoundDataProvider`
 
 ```csharp
-public interface ISoundDataProvider
+public interface ISoundDataProvider : IDisposable
 {
     int Position { get; }
     int Length { get; }
@@ -1082,6 +1243,7 @@ public interface ISoundDataProvider
     void Seek(int offset);
 }
 ```
+**Note:** `ISoundDataProvider` now implements `IDisposable`. Implementations should release their underlying resources (like streams) when disposed.
 
 **Properties:**
 
@@ -1100,6 +1262,7 @@ public interface ISoundDataProvider
 
 *   `ReadBytes(Span<float> buffer)`: Reads audio samples into the provided buffer.
 *   `Seek(int offset)`: Seeks to the specified offset (in samples) within the audio data.
+*   `Dispose()`: Releases resources held by the data provider.
 
 ### Interfaces `ISoundDecoder`
 
@@ -1153,13 +1316,16 @@ public interface ISoundEncoder : IDisposable
 *   `Encode(Span<float> samples)`: Encodes the provided audio samples.
 *   `Dispose()`: Releases the resources used by the encoder.
 
+
 ### Interfaces `ISoundPlayer`
 
 ```csharp
 public interface ISoundPlayer
 {
     PlaybackState State { get; }
-    bool IsLooping { get; set; } //looping is enable and disable, so should have setter
+    bool IsLooping { get; set; }
+    float PlaybackSpeed { get; set; }
+    float Volume { get; set; }
     float Time { get; }
     float Duration { get; }
     float LoopStartSeconds { get; }
@@ -1167,14 +1333,15 @@ public interface ISoundPlayer
     int LoopStartSamples { get; }
     int LoopEndSamples { get; }
 
-
     void Play();
     void Pause();
     void Stop();
-    void Seek(float time);
-    void Seek(int sampleOffset);
+    bool Seek(TimeSpan time, SeekOrigin seekOrigin = SeekOrigin.Begin);
+    bool Seek(float time);
+    bool Seek(int sampleOffset);
     void SetLoopPoints(float startTime, float? endTime = -1f);
     void SetLoopPoints(int startSample, int endSample = -1);
+    void SetLoopPoints(TimeSpan startTime, TimeSpan? endTime = null);
 }
 ```
 
@@ -1182,6 +1349,8 @@ public interface ISoundPlayer
 
 *   `State`: The current playback state (`Stopped`, `Playing`, `Paused`).
 *   `IsLooping`: Whether looping is enabled or disabled (`get`, `set`).
+*   `PlaybackSpeed`: Gets or sets the playback speed. 1.0 is normal speed.
+*   `Volume`: Gets or sets the volume of the sound player (0.0 to 1.0 or higher for gain).
 *   `Time`: The current playback position (in seconds).
 *   `Duration`: The total duration of the audio (in seconds).
 *   `LoopStartSeconds`: Gets the configured loop start point in seconds.
@@ -1194,10 +1363,12 @@ public interface ISoundPlayer
 *   `Play()`: Starts or resumes playback.
 *   `Pause()`: Pauses playback.
 *   `Stop()`: Stops playback and resets the position to the beginning.
-*   `Seek(float time)`: Seeks to the specified time (in seconds).
-*   `Seek(int sampleOffset)`: Seeks to the specified sample offset (in samples).
+*   `Seek(TimeSpan time, SeekOrigin seekOrigin = SeekOrigin.Begin)`: Seeks to the specified time using `TimeSpan`. Returns `true` if successful.
+*   `Seek(float time)`: Seeks to the specified time (in seconds). Returns `true` if successful.
+*   `Seek(int sampleOffset)`: Seeks to the specified sample offset (in samples). Returns `true` if successful.
 *   `SetLoopPoints(float startTime, float? endTime = -1f)`: Configures custom loop points using start and end times in seconds. `endTime` is optional;  use -1 or `null` to loop to the natural end.
 *   `SetLoopPoints(int startSample, int endSample = -1)`: Configures custom loop points using start and end sample indices. `endSample` is optional; use -1 to loop to the natural end.
+*   `SetLoopPoints(TimeSpan startTime, TimeSpan? endTime = null)`: Configures custom loop points using `TimeSpan`.
 
 ### Interfaces `IVisualizationContext`
 
@@ -1583,6 +1754,7 @@ public sealed class StreamDataProvider : ISoundDataProvider
 
     public int ReadBytes(Span<float> buffer);
     public void Seek(int sampleOffset);
+    public void Dispose();
 }
 ```
 
@@ -1603,6 +1775,7 @@ public sealed class StreamDataProvider : ISoundDataProvider
 
 *   `ReadBytes(Span<float> buffer)`: Reads audio samples from the stream into the provided buffer.
 *   `Seek(int sampleOffset)`: Seeks to the specified offset (in samples) within the audio stream (if supported).
+*   `Dispose()`: Releases resources used by the provider.
 
 ### Providers `MicrophoneDataProvider`
 
@@ -1767,6 +1940,74 @@ The `NetworkDataProvider` can handle both direct audio URLs and HLS (HTTP Live S
 
 The class uses an internal `Queue<float>` to buffer audio samples. The `ReadBytes` method waits for data to become available in the buffer if it's empty.
 
+### Providers `RawDataProvider`
+
+```csharp
+public sealed class RawDataProvider : ISoundDataProvider, IDisposable
+{
+    public RawDataProvider(Stream stream, SampleFormat sampleFormat, int channels, int sampleRate);
+
+    public int Position { get; }
+    public int Length { get; }
+    public bool CanSeek { get; }
+    public SampleFormat SampleFormat { get; }
+    public int? SampleRate { get; set; }
+
+    public event EventHandler<EventArgs>? EndOfStreamReached;
+    public event EventHandler<PositionChangedEventArgs>? PositionChanged;
+
+    public int ReadBytes(Span<float> buffer);
+    public void Seek(int offset);
+    public void Dispose();
+}
+```
+**Description:** Provides audio data from a stream containing raw PCM audio data.
+**Properties:**
+*   `Position`: The current read position in samples.
+*   `Length`: The total length of the stream in samples.
+*   `CanSeek`: Indicates if the underlying stream is seekable.
+*   `SampleFormat`: The sample format of the raw audio data.
+*   `SampleRate`: The sample rate of the raw audio data.
+    **Events:**
+*   `EndOfStreamReached`: Raised when the end of the stream is reached.
+*   `PositionChanged`: Raised when the read position changes.
+    **Methods:**
+*   `ReadBytes(Span<float> buffer)`: Reads raw PCM data from the stream and converts it to `float` if necessary.
+*   `Seek(int offset)`: Seeks to the specified offset in the underlying stream if `CanSeek` is true.
+*   `Dispose()`: Disposes the underlying stream.
+
+
+### Structs
+
+#### `DeviceInfo`
+```csharp
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+public struct DeviceInfo
+{
+    public IntPtr Id;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+    public string Name;
+    [MarshalAs(UnmanagedType.U1)]
+    public bool IsDefault;
+    public uint NativeDataFormatCount;
+    public IntPtr NativeDataFormats; // Pointer to an array of NativeDataFormat
+}
+```
+**Description:** Represents information about an audio device, including its native ID, name, whether it's the default system device, and a count/pointer to its supported native data formats.
+
+#### `NativeDataFormat`
+```csharp
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+public struct NativeDataFormat
+{
+    public SampleFormat Format;
+    public uint Channels;
+    public uint SampleRate;
+    public uint Flags;
+}
+```
+**Description:** Represents a specific native data format (sample format, channels, sample rate) supported by an audio device. Accessed via the `NativeDataFormats` pointer in `DeviceInfo`.
+
 ### Utils `Extensions`
 
 ```csharp
@@ -1774,30 +2015,27 @@ public static class Extensions
 {
     public static int GetBytesPerSample(this SampleFormat sampleFormat);
     public static unsafe Span<T> GetSpan<T>(nint ptr, int length) where T : unmanaged;
+    public static T[] ReadArray<T>(this nint pointer, int count) where T : struct; // New method
 }
 ```
-
-**Methods:**
-
-*   `GetBytesPerSample(this SampleFormat sampleFormat)`: Gets the number of bytes per sample for the specified `SampleFormat`.
-*   `GetSpan<T>(nint ptr, int length)`: Creates a `Span<T>` from a pointer and length.
+**New Methods:**
+*   `ReadArray<T>(this nint pointer, int count) where T : struct`: Reads an array of structures of type `T` from a native memory pointer.
 
 ### Utils `MathHelper`
-
 ```csharp
 public static class MathHelper
 {
     public static void Fft(Complex[] data);
     public static float[] HammingWindow(int size);
     public static void InverseFft(Complex[] data);
+    public static double Mod(this double x, double y); // New method
+    public static float PrincipalAngle(float angle);   // New method
+    // ... other existing methods ...
 }
 ```
-
-**Methods:**
-
-*   `Fft(Complex[] data)`: Performs an in-place Fast Fourier Transform (FFT) on the provided complex data.
-*   `HammingWindow(int size)`: Generates a Hamming window of the specified size.
-*   `InverseFft(Complex[] data)`: Performs an in-place inverse FFT on the provided complex data.
+**New Methods:**
+*   `Mod(this double x, double y)`: Returns the remainder after division, in the range [-0.5, 0.5).
+*   `PrincipalAngle(float angle)`: Returns the principal angle of a number in the range [-PI, PI).
 
 ### Visualization `LevelMeterAnalyzer`
 

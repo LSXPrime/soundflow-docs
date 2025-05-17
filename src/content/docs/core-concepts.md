@@ -12,23 +12,27 @@ This section explains the fundamental building blocks of SoundFlow and how they 
 The `AudioEngine` is the heart of SoundFlow. It's responsible for:
 
 *   **Initializing and managing the audio backend:** SoundFlow supports multiple audio backends (e.g., `MiniAudio`), which handle the low-level interaction with the operating system's audio API. The `AudioEngine` abstracts away the backend details, providing a consistent interface for higher-level components.
+*   **Enumerating and Managing Audio Devices:** The engine can list available playback and capture devices and allows switching between them during runtime.
 *   **Controlling audio device settings:** The engine allows you to configure parameters like sample rate, channel count, and buffer size.
-*   **Driving the audio processing loop:** The `AudioEngine` runs a dedicated, high-priority thread that continuously processes audio data. This ensures real-time performance and minimizes latency.
+*   **Driving the audio processing loop:** The `AudioEngine` runs a dedicated, high-priority thread (or uses backend-driven callbacks) that continuously processes audio data. This ensures real-time performance and minimizes latency.
 *   **Providing the root of the audio graph:** The engine hosts the `Master` mixer, which is the starting point for building complex audio processing pipelines.
 
 **Key Properties:**
 
-*   `SampleRate`: The audio sample rate (e.g., 44100 Hz).
+*   `SampleRate`: The audio sample rate (e.g., 44100 Hz, 48000 Hz).
 *   `Channels`: The number of audio channels (e.g., 2 for stereo).
 *   `Capability`:  Indicates whether the engine is configured for `Playback`, `Recording`, `Mixed` (both), or `Loopback`.
 *   `SampleFormat`: The format of audio samples (e.g., `F32` for 32-bit floating-point).
-*   `Backend`: The currently active audio backend.
 *   `IsDisposed`: Indicates whether the engine has been disposed.
+*   `CurrentPlaybackDevice`, `CurrentCaptureDevice`: Information about the currently active audio devices.
+*   `PlaybackDevices`, `CaptureDevices`: Lists of available audio devices.
 
 **Key Methods:**
 
 *   `CreateEncoder(...)`: Creates an instance of an `ISoundEncoder` for the current backend.
 *   `CreateDecoder(...)`: Creates an instance of an `ISoundDecoder` for the current backend.
+*   `UpdateDevicesInfo()`: Refreshes the list of available audio devices.
+*   `SwitchDevice(...)`, `SwitchDevices(...)`: Changes the active playback and/or capture device.
 *   `SoloComponent(...)`: Isolates a specific `SoundComponent` in the audio graph for debugging or monitoring.
 *   `UnsoloComponent(...)`: Removes a component from the soloed state.
 *   `Dispose()`: Releases the resources used by the `AudioEngine`.
@@ -37,7 +41,15 @@ The `AudioEngine` is the heart of SoundFlow. It's responsible for:
 
 ```csharp
 // Initialize a MiniAudioEngine with a 48kHz sample rate, stereo output, and 32-bit float samples.
+// 48kHz is a common rate and compatible with extensions like WebRTC APM.
 using var audioEngine = new MiniAudioEngine(48000, Capability.Playback, SampleFormat.F32, 2);
+
+// List playback devices
+audioEngine.UpdateDevicesInfo();
+foreach(var device in audioEngine.PlaybackDevices)
+{
+    Console.WriteLine($"Device: {device.Name}, Default: {device.IsDefault}");
+}
 ```
 
 
@@ -55,7 +67,7 @@ using var audioEngine = new MiniAudioEngine(48000, Capability.Playback, SampleFo
 *   **Properties:**
     *   `Name`: A descriptive name for the component.
     *   `Volume`: Controls the output gain.
-    *   `Pan`: Controls the stereo panning.
+    *   `Pan`: Controls the stereo panning (0.0 for full left, 0.5 for center, 1.0 for full right).
     *   `Enabled`: Enables or disables the component's processing.
     *   `Solo`: Isolates the component for debugging.
     *   `Mute`: Silences the component's output.
@@ -82,8 +94,9 @@ public class SineWaveGenerator : SoundComponent
         var sampleRate = AudioEngine.Instance.SampleRate;
         for (int i = 0; i < buffer.Length; i++)
         {
-            buffer[i] = MathF.Sin(_phase);
+            buffer[i] = MathF.Sin(_phase); // Assumes mono output or fills one channel
             _phase += 2 * MathF.PI * Frequency / sampleRate;
+            if (_phase > 2 * MathF.PI) _phase -= 2 * MathF.PI;
         }
     }
 }
@@ -106,28 +119,32 @@ The `Mixer` is a specialized `SoundComponent` that combines the output of multip
 
 ```csharp
 // Create a SoundPlayer and an Oscillator
-var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("audio.wav")));
+using var dataProvider = new StreamDataProvider(File.OpenRead("audio.wav"));
+var player = new SoundPlayer(dataProvider);
 var oscillator = new Oscillator { Frequency = 220, Type = Oscillator.WaveformType.Square };
 
 // Add both to the Master mixer
 Mixer.Master.AddComponent(player);
 Mixer.Master.AddComponent(oscillator);
+// ...
+// Don't forget to dispose dataProvider when done if not using 'using' on player scope
 ```
 
 
 ## Sound Modifiers (`SoundModifier`)
 
-`SoundModifier` is an abstract base class for creating audio effects that modify the audio stream. Modifiers are applied to `SoundComponent` instances and process the audio data on a sample-by-sample basis.
+`SoundModifier` is an abstract base class for creating audio effects that modify the audio stream. Modifiers are applied to `SoundComponent` instances and process the audio data.
 
 **Key Features:**
 
-*   **`ProcessSample(float sample, int channel)`:** This is the core method that derived classes must implement. It takes a single audio sample and the channel index as input and returns the modified sample.
-*   **Chaining:** Modifiers can be chained together to create complex effects.
+*   **`ProcessSample(float sample, int channel)`:** This is the core method that derived classes can implement to process audio on a sample-by-sample basis.
+*   **`Process(Span<float> buffer)`:** This method can be overridden for buffer-based processing, which is often more efficient for complex effects. By default, it calls `ProcessSample` for each sample.
+*   **`Enabled` Property:** Allows dynamically enabling or disabling the modifier's effect.
+*   **Chaining:** Modifiers can be chained together on a `SoundComponent` to create complex effect pipelines.
 
 **Built-in Modifiers:**
 
-SoundFlow provides a variety of built-in modifiers:
-
+SoundFlow provides a variety of built-in modifiers, including:
 *   Algorithmic Reverb Modifier: Simulates reverberation.
 *   Ambient Reverb Modifier: Creates a sense of spaciousness.
 *   Bass Boost Modifier: Enhances low frequencies.
@@ -138,14 +155,16 @@ SoundFlow provides a variety of built-in modifiers:
 *   Noise Reduction Modifier: Reduces noise.
 *   Parametric Equalizer: Provides precise EQ control.
 *   Stereo Chorus Modifier: Creates a stereo chorus.
-*  Treble Boost Modifier: Enhances high frequencies.
+*   Treble Boost Modifier: Enhances high frequencies.
+*   And potentially external modifiers like `WebRtcApmModifier` via extensions.
 
 
 **Example:**
 
 ```csharp
 // Create a SoundPlayer and a Reverb modifier
-var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("audio.wav")));
+using var dataProvider = new StreamDataProvider(File.OpenRead("audio.wav"));
+var player = new SoundPlayer(dataProvider);
 var reverb = new AlgorithmicReverbModifier { RoomSize = 0.8f, Wet = 0.2f };
 
 // Add the reverb modifier to the player
@@ -153,40 +172,35 @@ player.AddModifier(reverb);
 
 // Add the player to the Master mixer
 Mixer.Master.AddComponent(player);
+// ...
 ```
 
+## Sound Player Base (`SoundPlayerBase`)
+
+`SoundPlayerBase` is a new abstract class that provides common functionality for sound playback components like `SoundPlayer` and `SurroundPlayer`.
+
+**Key Features (inherited by `SoundPlayer` and `SurroundPlayer`):**
+
+*   Implements `ISoundPlayer`.
+*   Handles core playback logic: reading from an `ISoundDataProvider`, managing playback state (Play, Pause, Stop).
+*   Supports playback speed adjustment via `PlaybackSpeed` property.
+*   Manages looping with `IsLooping`, `LoopStartSamples`/`Seconds`, `LoopEndSamples`/`Seconds`.
+*   Provides seeking capabilities via `Seek` methods (accepting time in seconds, sample offset, or `TimeSpan`).
+*   `Volume` control (inherited from `SoundComponent`).
+*   `PlaybackEnded` event.
 
 ## Audio Playback (`SoundPlayer`, `SurroundPlayer`)
 
-SoundFlow provides two classes for audio playback:
+SoundFlow provides concrete classes for audio playback, now deriving from `SoundPlayerBase`:
 
-*   **`SoundPlayer`:** A basic `SoundComponent` that plays audio from an `ISoundDataProvider`.
-*   **`SurroundPlayer`:** An extended version of `SoundPlayer` that supports advanced surround sound configurations.
-
-**`ISoundPlayer` interface, which defines methods for controlling playback:**
-*   `State`: Indicates the current playback state (Playing, Paused, Stopped).
-*   `IsLooping`: Enables or disables looping.
-*   `Time`: Gets the current playback position.
-*   `Duration`: Gets the total duration of the audio.
-*   `LoopStartSeconds`: Gets the loop start point in seconds.
-*   `LoopEndSeconds`: Gets the loop end point in seconds. -1 indicates loop to the natural end of the audio.
-*   `LoopStartSamples`: Gets the loop start point in samples.
-*   `LoopEndSamples`: Gets the loop end point in samples. -1 indicates loop to the natural end of the audio.
-*   `PlaybackEnded`: An event that is raised when playback finishes.
-*   `Play()`: Begins audio playback.
-*   `Pause()`: Pauses audio playback.
-*   `Stop()`: Stops audio playback and resets the playhead to the beginning.
-*   `Seek(float time)`: Seeks to a specific time in seconds.
-*   `Seek(int sampleOffset)`: Seeks to a specific sample offset.
-*   `SetLoopPoints(float startTime, float? endTime = -1f)`: Sets the loop points in seconds. `endTime` is optional, and using -1 or null loops to the natural end.
-*   `SetLoopPoints(int startSample, int endSample = -1)`: Sets the loop points in samples. `endSample` is optional, and using -1 loops to the natural end.
+*   **`SoundPlayer`:** A `SoundPlayerBase` implementation for standard mono or stereo audio playback from an `ISoundDataProvider`.
+*   **`SurroundPlayer`:** An extended `SoundPlayerBase` implementation that supports advanced surround sound configurations.
 
 **Key Features (`SoundPlayer`):**
-*   Inherits from `ISoundPlayer`.
+*   All features from `SoundPlayerBase` and `ISoundPlayer`.
 
 **Key Features (`SurroundPlayer`):**
-
-*   Inherits from `ISoundPlayer`.
+*   All features from `SoundPlayerBase` and `ISoundPlayer`.
 *   `SpeakerConfiguration`: Allows you to define the speaker setup (e.g., Stereo, Quad, 5.1, 7.1, or a custom configuration).
 *   `PanningMethod`: Selects the panning algorithm to use (Linear, EqualPower, or VBAP).
 *   `ListenerPosition`: Sets the listener's position relative to the speakers.
@@ -215,7 +229,7 @@ The `Recorder` class allows you to capture audio input from a recording device.
 
 ## Audio Providers (`ISoundDataProvider`)
 
-`ISoundDataProvider` is an interface that defines a standard way to access audio data, regardless of its source.
+`ISoundDataProvider` is an interface that defines a standard way to access audio data, regardless of its source. **It now implements `IDisposable`.**
 
 **Key Features:**
 
@@ -228,19 +242,27 @@ The `Recorder` class allows you to capture audio input from a recording device.
 *   `Seek(int offset)`: Moves the read position to a specific offset (in samples).
 *   `EndOfStreamReached`: An event that is raised when the end of the audio data is reached.
 *   `PositionChanged`: An event that is raised when the read position changes.
+*   `Dispose()`: Implementations should release underlying resources (e.g., file streams).
 
 **Built-in Providers:**
 
-*   `AssetDataProvider`: Loads audio data from a byte array (useful for in-memory assets).
-*   `StreamDataProvider`: Reads audio data from a `Stream` (supports seeking if the stream is seekable).
+*   `AssetDataProvider`: Loads audio data from a byte array.
+*   `StreamDataProvider`: Reads audio data from a `Stream`.
 *   `MicrophoneDataProvider`: Captures audio data from the microphone in real-time.
-*   `ChunkedDataProvider`: Reads audio data from a file or stream in chunks, making it efficient for large files. It decodes audio on-demand and prefetches data to ensure smooth playback.
-*   `NetworkDataProvider`: Reads audio data from a network source (URL). It supports both direct audio file URLs and HLS (HTTP Live Streaming) playlists. It handles playlist parsing, segment downloading, and seeking.
-*   `RawDataProvider`: Reads audio data from a raw pcm stream. 
+*   `ChunkedDataProvider`: Reads audio data from a file or stream in chunks.
+*   `NetworkDataProvider`: Reads audio data from a network source (URL, HLS).
+*   `RawDataProvider`: Reads audio data from a raw PCM stream.
+
+It's good practice to dispose of `ISoundDataProvider` instances when they are no longer needed, for example, using a `using` statement.
+
+```csharp
+using var dataProvider = new StreamDataProvider(File.OpenRead("audio.wav"));
+// Use dataProvider
+```
 
 ## Audio Encoding/Decoding (`ISoundEncoder`, `ISoundDecoder`)
 
-`ISoundEncoder` and `ISoundDecoder` are interfaces for encoding and decoding audio data to and from different formats.
+`ISoundEncoder` and `ISoundDecoder` are interfaces for encoding and decoding audio data to and from different formats. Both are `IDisposable`.
 
 *   **`ISoundEncoder`:** Encodes raw audio samples into a specific format (e.g., WAV, FLAC, MP3). Currently only WAV supported by miniaudio backend.
 *   **`ISoundDecoder`:** Decodes audio data from a specific format into raw audio samples.
@@ -271,7 +293,7 @@ The `MiniAudio` backend provides implementations of these interfaces using the `
 
 ## Audio Visualization (`IVisualizer`)
 
-`IVisualizer` is an interface for creating components that visualize audio data. Visualizers typically don't modify the audio stream but instead render a graphical representation of the data.
+`IVisualizer` is an interface for creating components that visualize audio data. Visualizers typically don't modify the audio stream but instead render a graphical representation of the data. It implements `IDisposable`.
 
 **Key Features:**
 
@@ -279,6 +301,7 @@ The `MiniAudio` backend provides implementations of these interfaces using the `
 *   `ProcessOnAudioData(Span<float> audioData)`: This method is called by the audio engine to provide the visualizer with a chunk of audio data to process.
 *   `Render(IVisualizationContext context)`: This method is called to render the visualization. It receives an `IVisualizationContext` instance, which provides drawing methods.
 *   `VisualizationUpdated`: An event that is raised when the visualization needs to be redrawn (e.g., when new audio data has been processed).
+*   `Dispose()`: Releases resources held by the visualizer.
 
 ## Visualization Context (`IVisualizationContext`):
 

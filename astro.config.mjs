@@ -155,6 +155,12 @@ export default defineConfig({
 						{ label: 'Threading Considerations', link: '/advanced-topics#threading-considerations' },
 					],
 				},
+				{
+					label: 'Extensions',
+					items: [
+						{ label: 'WebRTC Audio Processing Module', link: '/extensions/webrtc-apm' },
+					]
+				}
 			],
 			editLink: {
 				baseUrl: 'https://github.com/LSXPrime/soundflow-docs/edit/main/',

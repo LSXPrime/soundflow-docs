@@ -17,6 +17,8 @@ This section delves into more advanced topics related to SoundFlow, including ex
     *   **Sound Modifiers (`SoundModifier`)**
     *   **Visualizers (`IVisualizer`)**
     *   **Audio Backends (`AudioEngine`)**
+    *   **Sound Data Providers (`ISoundDataProvider`)**
+    *   **Extensions (e.g., for specific DSP libraries)**: SoundFlow supports integration with external audio processing libraries. For instance, the `SoundFlow.Extensions.WebRtc.Apm` package provides features like noise suppression and echo cancellation by wrapping the WebRTC Audio Processing Module. You can create similar extensions for other libraries.
 
     ### Custom Sound Components
 
@@ -75,8 +77,11 @@ This section delves into more advanced topics related to SoundFlow, including ex
 
     <Steps>
     1. **Inherit from `SoundModifier`:** Create a new class that inherits from the abstract `SoundModifier` class.
-    2. **Implement `ProcessSample`:** Override the `ProcessSample(float sample, int channel)` method. This method takes a single audio sample and the channel index as input and returns the modified sample.
+    2. **Implement `ProcessSample` (or override `Process` for buffer-level):**
+        *   `ProcessSample(float sample, int channel)`: This method takes a single audio sample and the channel index as input and returns the modified sample.
+        *   `Process(Span<float> buffer)`: Override this for more complex effects that operate on entire buffers (e.g., FFT-based effects). By default, it calls `ProcessSample` for each sample.
     3. **Add properties (optional):** Add properties to your modifier to expose configurable parameters.
+    4. **`Enabled` property:** Your modifier will have an `Enabled` property (defaulting to `true`) to allow toggling its effect.
     </Steps>
 
     **Example:**
@@ -115,11 +120,14 @@ This section delves into more advanced topics related to SoundFlow, including ex
     ```csharp
     // Create an instance of your custom modifier
     var distortion = new CustomDistortionModifier { Threshold = 0.7f };
+    // distortion.Enabled = false; // To disable it
 
     // Add it to a SoundComponent
-    var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("audio.wav")));
+    using var dataProvider = new StreamDataProvider(File.OpenRead("audio.wav"));
+    var player = new SoundPlayer(dataProvider);
     player.AddModifier(distortion);
-
+    Mixer.Master.AddComponent(player);
+    player.Play();
     // ...
     ```
 
@@ -133,6 +141,7 @@ This section delves into more advanced topics related to SoundFlow, including ex
     2. **Implement `ProcessOnAudioData`:** This method receives a `Span<float>` containing audio data. You should process this data and store the relevant information needed for rendering.
     3. **Implement `Render`:** This method receives an `IVisualizationContext`. Use the drawing methods provided by the context (e.g., `DrawLine`, `DrawRectangle`) to render your visualization.
     4. **Raise `VisualizationUpdated`:** When the visualization data changes (e.g., after processing new audio data), raise the `VisualizationUpdated` event to notify the UI to update the display.
+    5. **Implement `Dispose`:** Release any unmanaged resources or unsubscribe from events.
     </Steps>
 
     **Example:**
@@ -141,6 +150,9 @@ This section delves into more advanced topics related to SoundFlow, including ex
     using SoundFlow.Interfaces;
     using System;
     using System.Numerics;
+
+    // Assuming a simple Color struct/class exists:
+    // public struct Color { public float R, G, B, A; ... }
 
     public class CustomBarGraphVisualizer : IVisualizer
     {
@@ -152,6 +164,7 @@ This section delves into more advanced topics related to SoundFlow, including ex
 
         public void ProcessOnAudioData(Span<float> audioData)
         {
+            if (audioData.IsEmpty) return;
             // Calculate the average level (simplified for this example)
             float sum = 0;
             for (int i = 0; i < audioData.Length; i++)
@@ -171,12 +184,14 @@ This section delves into more advanced topics related to SoundFlow, including ex
 
             // Draw a simple bar graph based on the calculated level
             float barHeight = _level * 200; // Scale the level for visualization
+            // Assuming Color constructor: new Color(r,g,b) or similar
             context.DrawRectangle(10, 200 - barHeight, 30, barHeight, new Color(0, 1, 0));
         }
 
         public void Dispose()
         {
-          // Dispose any resources.
+          // Unsubscribe from events, release resources if any
+          VisualizationUpdated = null;
         }
     }
     ```
@@ -187,14 +202,16 @@ This section delves into more advanced topics related to SoundFlow, including ex
     SoundFlow is designed to support multiple audio backends. Currently, it includes a `MiniAudio` backend. You can add support for other audio APIs (e.g., WASAPI, ASIO, CoreAudio) by creating a new backend.
 
     <Steps>
-    1. **Create a new class that inherits from `AudioEngine`**.
-    2. **Implement the abstract methods:**
-        *   `InitializeAudioDevice()`: Initialize the audio device using the new backend's API.
-        *   `ProcessAudioData()`: Implement the main audio processing loop, reading input from the device, processing the audio graph, and writing output to the device.
-        *   `CleanupAudioDevice()`: Clean up any resources used by the audio device.
+    6. **Create a new class that inherits from `AudioEngine`**.
+    7. **Implement the abstract methods:**
+        *   `InitializeAudioDevice()`: Initialize the audio device using the new backend's API, including context creation if needed.
+        *   `ProcessAudioData()`: Implement the main audio processing loop, or set up callbacks if the backend works that way.
+        *   `CleanupAudioDevice()`: Clean up any resources used by the audio device and context.
         *   `CreateEncoder(...)`: Create an `ISoundEncoder` implementation for the new backend.
         *   `CreateDecoder(...)`: Create an `ISoundDecoder` implementation for the new backend.
-    3. **Implement `ISoundEncoder` and `ISoundDecoder`:** Create classes that implement these interfaces to handle audio encoding and decoding for your chosen backend.
+        *   `UpdateDevicesInfo()`: Implement logic to enumerate playback and capture devices using the backend's API, populating `PlaybackDevices`, `CaptureDevices`, `PlaybackDeviceCount`, and `CaptureDeviceCount`.
+        *   `SwitchDevice(...)` and `SwitchDevices(...)`: Implement logic to reinitialize or reconfigure the audio device to use the specified new device(s).
+    8. **Implement `ISoundEncoder` and `ISoundDecoder`:** Create classes that implement these interfaces to handle audio encoding and decoding for your chosen backend.
     </Steps>
 
     **Example (Skeleton):**
@@ -202,45 +219,99 @@ This section delves into more advanced topics related to SoundFlow, including ex
     ```csharp
     using SoundFlow.Abstracts;
     using SoundFlow.Interfaces;
+    using SoundFlow.Enums;
+    using SoundFlow.Structs;
     using System;
     using System.IO;
+    using System.Linq;
 
     public class MyNewAudioEngine : AudioEngine
     {
+        private nint _context; // Example: native context handle
+        private nint _device;  // Example: native device handle
+
         public MyNewAudioEngine(int sampleRate, Capability capability, SampleFormat sampleFormat, int channels)
             : base(sampleRate, capability, sampleFormat, channels)
         {
-            // ...
+            // Base constructor calls InitializeAudioDevice
         }
 
         protected override void InitializeAudioDevice()
         {
             // Initialize your audio device using the new backend's API
+
+            // 1. Initialize backend context (e.g., ma_context_init for MiniAudio)
+            // _context = NativeApi.InitContext();
+            // 2. Get default device IDs or use null for system default
+            // UpdateDevicesInfo(); // Populate device lists
+            // var defaultPlaybackId = PlaybackDevices.FirstOrDefault(d => d.IsDefault)?.Id ?? IntPtr.Zero;
+            // var defaultCaptureId = CaptureDevices.FirstOrDefault(d => d.IsDefault)?.Id ?? IntPtr.Zero;
+            // 3. Initialize the actual device with these IDs
+            // _device = NativeApi.InitDevice(_context, ..., defaultPlaybackId, defaultCaptureId);
+            // NativeApi.StartDevice(_device);
+            Console.WriteLine("MyNewAudioEngine: Audio device initialized.");
         }
 
         protected override void ProcessAudioData()
         {
-            // Implement the audio processing loop
+            // If backend uses callbacks, this might be empty.
+            // If backend needs a manual loop, implement it here.
         }
 
         protected override void CleanupAudioDevice()
         {
-            // Clean up audio device resources
+            // NativeApi.StopDevice(_device);
+            // NativeApi.UninitDevice(_device);
+            // NativeApi.UninitContext(_context);
+            Console.WriteLine("MyNewAudioEngine: Audio device cleaned up.");
         }
 
-        protected internal override ISoundEncoder CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate)
+        public override ISoundEncoder CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate)
         {
             // Return an instance of your custom ISoundEncoder implementation
-            return new MyNewAudioEncoder(filePath, encodingFormat, sampleFormat, encodingChannels, sampleRate);
+            // return new MyNewAudioEncoder(filePath, encodingFormat, sampleFormat, encodingChannels, sampleRate);
+            throw new NotImplementedException();
         }
 
-        protected internal override ISoundDecoder CreateDecoder(Stream stream)
+        public override ISoundDecoder CreateDecoder(Stream stream)
         {
             // Return an instance of your custom ISoundDecoder implementation
-            return new MyNewAudioDecoder(stream);
+            // return new MyNewAudioDecoder(stream);
+            throw new NotImplementedException();
         }
 
-        // ... (Implement MyNewAudioEncoder and MyNewAudioDecoder)
+        public override void UpdateDevicesInfo()
+        {
+            // Use backend API to get list of playback and capture devices
+            // Populate this.PlaybackDevices, this.CaptureDevices,
+            // this.PlaybackDeviceCount, this.CaptureDeviceCount.
+            // Example:
+            // (var nativePlaybackDevices, var nativeCaptureDevices) = NativeApi.GetDeviceList(_context);
+            // this.PlaybackDevices = ConvertNativeToDeviceInfo(nativePlaybackDevices);
+            // ...
+            Console.WriteLine("MyNewAudioEngine: Device info updated.");
+        }
+
+        public override void SwitchDevice(DeviceInfo deviceInfo, DeviceType type)
+        {
+            // CleanupCurrentDevice(); // Stop and uninit current device
+            // if (type == DeviceType.Playback) InitializeWithDeviceIds(deviceInfo.Id, CurrentCaptureDevice?.Id ?? IntPtr.Zero);
+            // else InitializeWithDeviceIds(CurrentPlaybackDevice?.Id ?? IntPtr.Zero, deviceInfo.Id);
+            // Update CurrentPlaybackDevice/CurrentCaptureDevice properties
+            Console.WriteLine($"MyNewAudioEngine: Switched {type} device to {deviceInfo.Name}.");
+        }
+        
+        public override void SwitchDevices(DeviceInfo? playbackDeviceInfo, DeviceInfo? captureDeviceInfo)
+        {
+            // IntPtr playbackId = playbackDeviceInfo?.Id ?? CurrentPlaybackDevice?.Id ?? IntPtr.Zero;
+            // IntPtr captureId = captureDeviceInfo?.Id ?? CurrentCaptureDevice?.Id ?? IntPtr.Zero;
+            // CleanupCurrentDevice();
+            // InitializeWithDeviceIds(playbackId, captureId);
+            Console.WriteLine("MyNewAudioEngine: Switched devices.");
+        }
+        // Helper method for device initialization logic
+        // private void InitializeWithDeviceIds(IntPtr playbackId, IntPtr captureId) { /* ... */ }
+        // private void CleanupCurrentDevice() { /* ... */ }
     }
     ```
   </TabItem>
@@ -250,12 +321,13 @@ This section delves into more advanced topics related to SoundFlow, including ex
 
     Here are some tips for optimizing the performance of your SoundFlow applications:
 
-    *   **Buffer Sizes:** Choose appropriate buffer sizes for your use case. Smaller buffers reduce latency but increase CPU overhead. Larger buffers can improve efficiency but may introduce latency. Experiment to find the optimal balance.
-    *   **SIMD:** SoundFlow uses SIMD instructions (when available) in the `Mixer` and `MathHelper` classes. Ensure your target platform supports SIMD for better performance.
+    *   **Buffer Sizes:** Choose appropriate buffer sizes for your use case. Smaller buffers reduce latency but increase CPU overhead. Larger buffers can improve efficiency but may introduce latency. Experiment to find the optimal balance. The audio backend (e.g., MiniAudio) often manages its own internal buffer sizes based on system capabilities and requests.
+    *   **SIMD:** SoundFlow uses SIMD instructions (when available) in the `Mixer` and `MathHelper` classes, and for some operations within `SoundComponent`. Ensure your target platform supports SIMD for better performance.
     *   **Profiling:** Use a profiler (like the one built into Visual Studio) to identify performance bottlenecks in your audio processing pipeline.
-    *   **Asynchronous Operations:** For long-running operations (e.g., loading large files), use asynchronous programming (`async` and `await`) to avoid blocking the main thread or the audio thread.
-    *   **Avoid Allocations:** Minimize memory allocations within the `GenerateAudio` method of `SoundComponent` and the `ProcessSample` method of `SoundModifier`. Allocate buffers and other resources in advance, if possible.
+    *   **Asynchronous Operations:** For long-running operations (e.g., loading large files, network requests in `NetworkDataProvider`), use asynchronous programming (`async` and `await`) to avoid blocking the main thread or the audio thread.
+    *   **Avoid Allocations:** Minimize memory allocations within the `GenerateAudio` method of `SoundComponent` and the `ProcessSample` or `Process` method of `SoundModifier`. Allocate buffers and other resources in advance, if possible. Use `ArrayPool<T>.Shared` for temporary buffers when unavoidable.
     *   **Efficient Algorithms:** Use efficient algorithms for audio processing, especially in performance-critical sections.
+    *   **Modifier Overhead:** Each `SoundModifier` added to a `SoundComponent` introduces some overhead. For very simple operations, integrating them directly into a custom `SoundComponent` might be more performant than using many tiny modifiers. However, modifiers offer better reusability and modularity.
   </TabItem>
 
   <TabItem label="Threading Considerations">
@@ -265,8 +337,8 @@ This section delves into more advanced topics related to SoundFlow, including ex
 
     **Key Considerations:**
 
-    *   **Audio Thread:** The `AudioEngine`'s `ProcessAudioData` method, and consequently the `GenerateAudio` method of your `SoundComponent` and `Process` method of your `AudioAnalyzer` classes, are all called from the audio thread. Avoid performing any long-running or blocking operations on this thread.
-    *   **UI Thread:** Never perform audio processing directly on the UI thread. This can lead to unresponsiveness and glitches. Use the `AudioEngine`'s audio thread for all audio-related operations.
-    *   **Thread Safety:** If you need to access or modify shared data from both the audio thread and another thread (e.g., the UI thread), use appropriate synchronization mechanisms to ensure thread safety.
+    *   **Audio Thread:** The `AudioEngine`'s audio processing logic (e.g., within `ProcessGraph`, `ProcessAudioInput`, or backend callbacks which then call these) and consequently the `GenerateAudio` method of your `SoundComponent` and `Process` method of your `AudioAnalyzer` classes, are all called from the audio thread(s). Avoid performing any long-running or blocking operations (like I/O, complex non-audio computations, or UI updates) on this thread.
+    *   **UI Thread:** Never perform audio processing directly on the UI thread. This can lead to unresponsiveness and glitches. Use the `AudioEngine`'s audio thread for all audio-related operations. For UI updates based on audio events (e.g., from an `IVisualizer`), marshal the calls to the UI thread (e.g., `Dispatcher.Invoke` in WPF, `Control.Invoke` in WinForms).
+    *   **Thread Safety:** If you need to access or modify shared data from both the audio thread and another thread (e.g., the UI thread updating a `SoundModifier`'s property), use appropriate synchronization mechanisms (like `lock`, `Monitor`, or thread-safe collections) to ensure data integrity and prevent race conditions. Many properties on `SoundComponent` and `SoundModifier` are internally locked for thread-safe access.
   </TabItem>
 </Tabs>

@@ -3,17 +3,15 @@ title: Tutorials and Examples
 description: A collection of tutorials and examples to help you learn how to use SoundFlow for various audio processing tasks.
 ---
 
-import { Steps } from '@astrojs/starlight/components';
+import { Steps, TabItem, Tabs } from '@astrojs/starlight/components';
 
 # Tutorials and Examples
 
 This section provides a collection of tutorials and examples to help you learn how to use SoundFlow for various audio processing tasks. Each tutorial provides step-by-step instructions and explanations, while the examples offer ready-to-run code snippets that demonstrate specific features.
 
-## Tutorials
+## Playback
 
-### Playback
-
-#### 1. Basic Playback
+### 1. Basic Playback
 
 This tutorial demonstrates how to play an audio file from disk using `SoundPlayer` and `StreamDataProvider`.
 
@@ -39,6 +37,7 @@ This tutorial demonstrates how to play an audio file from disk using `SoundPlaye
     using SoundFlow.Components;
     using SoundFlow.Enums;
     using SoundFlow.Providers;
+    using System.IO;
 
     namespace BasicPlayback;
 
@@ -47,11 +46,12 @@ This tutorial demonstrates how to play an audio file from disk using `SoundPlaye
         private static void Main(string[] args)
         {
             // Initialize the audio engine with the MiniAudio backend.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Playback);
 
             // Create a SoundPlayer and load an audio file.
             // Replace "path/to/your/audiofile.wav" with the actual path to your audio file.
-            var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav")));
+            using var dataProvider = new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav"));
+            var player = new SoundPlayer(dataProvider);
 
             // Add the player to the master mixer.
             Mixer.Master.AddComponent(player);
@@ -68,6 +68,7 @@ This tutorial demonstrates how to play an audio file from disk using `SoundPlaye
 
             // Remove the player from the mixer.
             Mixer.Master.RemoveComponent(player);
+            // dataProvider is disposed automatically due to 'using' statement.
         }
     }
     ```
@@ -81,11 +82,11 @@ This tutorial demonstrates how to play an audio file from disk using `SoundPlaye
 
 **Explanation:**
 
-This code initializes the `AudioEngine`, creates a `SoundPlayer` that loads an audio file using `StreamDataProvider`, adds the player to the `Master` mixer, and starts playback. The console application then waits for the user to press a key before stopping playback and cleaning up.
+This code initializes the `AudioEngine`, creates a `StreamDataProvider` (which is `IDisposable` and managed by a `using` statement) to load an audio file, creates a `SoundPlayer` with this provider, adds the player to the `Master` mixer, and starts playback. The console application then waits for the user to press a key before stopping playback and cleaning up.
 
-#### 2. Web Playback
+### 2. Web Playback (NetworkDataProvider)
 
-This tutorial demonstrates how to play an audio stream from a URL using `SoundPlayer` and `StreamDataProvider`.
+This tutorial demonstrates how to play an audio stream from a URL using `SoundPlayer` and `NetworkDataProvider`.
 
 **Steps:**
 
@@ -109,7 +110,9 @@ This tutorial demonstrates how to play an audio stream from a URL using `SoundPl
     using SoundFlow.Components;
     using SoundFlow.Enums;
     using SoundFlow.Providers;
-    using System.Net.Http;
+    using System;
+    using System.IO;
+    using System.Threading.Tasks;
 
     namespace WebPlayback;
 
@@ -118,15 +121,13 @@ This tutorial demonstrates how to play an audio stream from a URL using `SoundPl
         private static async Task Main(string[] args)
         {
             // Initialize the audio engine.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Playback);
 
-            // Create an HttpClient to fetch the audio stream.
-            using var httpClient = new HttpClient();
-            // Replace "your-audio-stream-url" with the actual URL of an audio stream (e.g., an internet radio station).
-            var stream = await httpClient.GetStreamAsync("your-audio-stream-url");
-
-            // Create a SoundPlayer and load the stream.
-            var player = new SoundPlayer(new StreamDataProvider(stream));
+            // Create a NetworkDataProvider. Replace "your-audio-stream-url"
+            // with the actual URL (direct audio file or HLS .m3u8 playlist).
+            // NetworkDataProvider is IDisposable.
+            using var dataProvider = new NetworkDataProvider("your-audio-stream-url");
+            var player = new SoundPlayer(dataProvider);
 
             // Add the player to the master mixer.
             Mixer.Master.AddComponent(player);
@@ -143,10 +144,11 @@ This tutorial demonstrates how to play an audio stream from a URL using `SoundPl
 
             // Remove the player from the mixer.
             Mixer.Master.RemoveComponent(player);
+            // dataProvider is disposed automatically.
         }
     }
     ```
-4. **Replace `"your-audio-stream-url"` with the actual URL of an audio stream.**
+4. **Replace `"your-audio-stream-url"` with the actual URL of an audio stream (e.g., direct MP3/WAV or an HLS .m3u8 playlist).**
 5. **Build and run the application:**
 
     ```
@@ -156,11 +158,11 @@ This tutorial demonstrates how to play an audio stream from a URL using `SoundPl
 
 **Explanation:**
 
-This code initializes the `AudioEngine`, creates an `HttpClient` to download the audio stream from the provided URL, creates a `SoundPlayer` that uses a `StreamDataProvider` to read from the stream, adds the player to the `Master` mixer, and starts playback. The `async` and `await` keywords are used to perform the network operation asynchronously without blocking the main thread.
+This code initializes the `AudioEngine`, creates a `NetworkDataProvider` for the given URL (which handles direct files or HLS playlists), creates a `SoundPlayer`, adds it to the `Master` mixer, and starts playback. `NetworkDataProvider` is `IDisposable` and managed with a `using` statement.
 
-#### 3. Playback Control
+### 3. Playback Control
 
-This tutorial demonstrates how to control audio playback using `Play`, `Pause`, `Stop`, and `Seek`.
+This tutorial demonstrates how to control audio playback using `Play`, `Pause`, `Stop`, `Seek`, and `PlaybackSpeed`.
 
 **Steps:**
 
@@ -184,6 +186,8 @@ This tutorial demonstrates how to control audio playback using `Play`, `Pause`, 
     using SoundFlow.Components;
     using SoundFlow.Enums;
     using SoundFlow.Providers;
+    using System;
+    using System.IO;
 
     namespace PlaybackControl;
 
@@ -192,17 +196,18 @@ This tutorial demonstrates how to control audio playback using `Play`, `Pause`, 
         private static void Main(string[] args)
         {
             // Initialize the audio engine.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Playback);
 
             // Create a SoundPlayer and load an audio file.
-            var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav")));
+            using var dataProvider = new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav"));
+            var player = new SoundPlayer(dataProvider) { Volume = 0.8f }; // Example: set initial volume
 
             // Add the player to the master mixer.
             Mixer.Master.AddComponent(player);
 
             // Start playback.
             player.Play();
-            Console.WriteLine("Playing audio... (p: pause, r: resume, s: seek, any other key: stop)");
+            Console.WriteLine("Playing audio... (p: pause/play, s: seek, +/-: speed, v/m: volume, any other: stop)");
 
             // Handle user input for playback control.
             while (player.State != PlaybackState.Stopped)
@@ -211,24 +216,38 @@ This tutorial demonstrates how to control audio playback using `Play`, `Pause`, 
                 switch (keyInfo.Key)
                 {
                     case ConsoleKey.P:
-                        player.Pause();
-                        Console.WriteLine("Paused");
-                        break;
-                    case ConsoleKey.R:
-                        player.Play();
-                        Console.WriteLine("Resumed");
+                        if (player.State == PlaybackState.Playing) player.Pause();
+                        else player.Play();
+                        Console.WriteLine(player.State == PlaybackState.Paused ? "Paused" : "Playing");
                         break;
                     case ConsoleKey.S:
-                        Console.Write("Enter seek time (in seconds): ");
-                        if (float.TryParse(Console.ReadLine(), out var seekTime))
+                        Console.Write("Enter seek time (in seconds, e.g., 10.5): ");
+                        if (float.TryParse(Console.ReadLine(), out var seekTimeSeconds))
                         {
-                            player.Seek(seekTime);
-                            Console.WriteLine($"Seeked to {seekTime} seconds");
+                            if (player.Seek(TimeSpan.FromSeconds(seekTimeSeconds)))
+                                Console.WriteLine($"Seeked to {seekTimeSeconds:F1}s. Current time: {player.Time:F1}s");
+                            else
+                                Console.WriteLine("Seek failed.");
                         }
-                        else
-                        {
-                            Console.WriteLine("Invalid seek time.");
-                        }
+                        else Console.WriteLine("Invalid seek time.");
+                        break;
+                    case ConsoleKey.OemPlus:
+                    case ConsoleKey.Add:
+                        player.PlaybackSpeed = Math.Min(2.0f, player.PlaybackSpeed + 0.1f);
+                        Console.WriteLine($"Playback speed: {player.PlaybackSpeed:F1}x");
+                        break;
+                    case ConsoleKey.OemMinus:
+                    case ConsoleKey.Subtract:
+                        player.PlaybackSpeed = Math.Max(0.1f, player.PlaybackSpeed - 0.1f);
+                        Console.WriteLine($"Playback speed: {player.PlaybackSpeed:F1}x");
+                        break;
+                    case ConsoleKey.V:
+                        player.Volume = Math.Min(1.5f, player.Volume + 0.1f); // Allow gain up to 150%
+                        Console.WriteLine($"Volume: {player.Volume:P0}");
+                        break;
+                    case ConsoleKey.M:
+                        player.Volume = Math.Max(0.0f, player.Volume - 0.1f);
+                        Console.WriteLine($"Volume: {player.Volume:P0}");
                         break;
                     default:
                         player.Stop();
@@ -254,12 +273,13 @@ This tutorial demonstrates how to control audio playback using `Play`, `Pause`, 
 
 This code initializes the `AudioEngine`, creates a `SoundPlayer`, adds it to the `Master` mixer, and starts playback. It then enters a loop that handles user input for playback control:
 
-*   `P`: Pauses playback.
-*   `R`: Resumes playback.
-*   `S`: Prompts the user for a seek time (in seconds) and seeks to that position.
+*   `P`: Pauses or resumes playback.
+*   `S`: Prompts for a seek time (in seconds) and seeks using `TimeSpan.FromSeconds()`. The `Seek` method now returns a boolean indicating success.
+*   `+`/`-`: Adjusts `PlaybackSpeed`.
+*   `V`/`M`: Adjusts `player.Volume`.
 *   Any other key: Stops playback.
 
-#### 4. Looping with Custom Loop Points
+### 4. Looping with Custom Loop Points
 
 This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to set custom loop points.
 
@@ -285,6 +305,7 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to 
     using SoundFlow.Components;
     using SoundFlow.Enums;
     using SoundFlow.Providers;
+    using System;
     using System.IO;
     
     namespace LoopingPlayback;
@@ -294,24 +315,25 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to 
         private static void Main(string[] args)
         {
             // Initialize the audio engine.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Playback);
     
             // Create a SoundPlayer and load an audio file.
-            var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav")));
+            using var dataProvider = new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav"));
+            var player = new SoundPlayer(dataProvider);
     
             // Enable looping.
             player.IsLooping = true;
     
             // **Optional: Set custom loop points**
     
-            // Example 1: Loop from 2.5 seconds to 7.0 seconds (using seconds)
-            player.SetLoopPoints(2.5f, 7.0f);
+            // Example 1: Loop from 2.5 seconds to 7.0 seconds (using float seconds)
+            // player.SetLoopPoints(2.5f, 7.0f);
     
             // Example 2: Loop from sample 110250 to sample 308700 (using samples)
-            // player.SetLoopPoints(110250, 308700);
+            // player.SetLoopPoints(110250, 308700); // Assuming 44.1kHz stereo, these are example values
     
-            // Example 3: Loop from 1.5 seconds to the natural end of the audio (using seconds, end point is optional)
-            // player.SetLoopPoints(1.5f);
+            // Example 3: Loop from 1.5 seconds to the natural end of the audio (using TimeSpan, end point is optional)
+            player.SetLoopPoints(TimeSpan.FromSeconds(1.5));
     
             // Add the player to the master mixer.
             Mixer.Master.AddComponent(player);
@@ -331,7 +353,7 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to 
         }
     }
     ```
-4. **Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.**
+4. **Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.** Make sure the sample indices in Example 2 are valid for your file if you use that option.
 5. **Build and run the application:**
 
     ```
@@ -341,28 +363,13 @@ This tutorial demonstrates how to enable looping for a `SoundPlayer` and how to 
 
 **Explanation:**
 
-This code builds upon the basic playback example and introduces audio looping with custom loop points.
+This code builds upon the basic playback example and introduces audio looping.
+*   **`player.IsLooping = true;`**: Enables looping.
+*   **`player.SetLoopPoints(...)`**: Configures the loop region.
+    *   Overloads accept `float` seconds, `int` samples, or `TimeSpan`.
+    *   If `endTime` (or `endSample`) is omitted or set to `-1f` (or `-1`), the loop goes to the natural end of the audio.
 
-*   **`player.IsLooping = true;`**: This line enables looping for the `SoundPlayer`.  It's essential to set this to `true` for any looping behavior.
-
-*   **`player.SetLoopPoints(...)`**: This method, used with different parameters, allows you to define custom loop regions within the audio:
-
-*   **`player.SetLoopPoints(2.5f, 7.0f);` (Seconds):** This sets the loop to start at 2.5 seconds and end at 7.0 seconds of the audio. Playback will seamlessly jump back to the 2.5-second mark when it reaches 7.0 seconds.
-
-*   **`player.SetLoopPoints(110250, 308700);` (Samples):**  This sets the loop points using sample indices.  Looping will occur between sample 110250 and sample 308700.
-
-*   **`player.SetLoopPoints(1.5f);` (Start Time, Loop to End):**  When you provide only a start time (or `startSample`), the audio will loop from the specified start point to the natural end of the audio file. In this example, playback loops from 1.5 seconds to the end of the audio.
-
-**To experiment with different loop configurations:**
-
-1.  Uncomment the specific `player.SetLoopPoints(...)` line corresponding to the looping behavior you want to test (seconds, samples, or loop-to-end).
-2.  Comment out any other `player.SetLoopPoints(...)` lines to avoid conflicts.
-3.  Run the application to hear the audio looping with your defined loop points.
-
-Remember to have `player.IsLooping = true;` enabled for any of these loop point configurations to take effect. If `IsLooping` is `false`, the audio will play once through without looping, regardless of any loop points set.
-
-
-#### 5. Surround Sound
+### 5. Surround Sound
 
 This tutorial demonstrates how to use `SurroundPlayer` to play audio with surround sound configurations.
 
@@ -389,6 +396,7 @@ This tutorial demonstrates how to use `SurroundPlayer` to play audio with surrou
     using SoundFlow.Enums;
     using SoundFlow.Providers;
     using System.Numerics;
+    using System.IO;
 
     namespace SurroundPlayback;
 
@@ -396,21 +404,24 @@ This tutorial demonstrates how to use `SurroundPlayer` to play audio with surrou
     {
         private static void Main(string[] args)
         {
-            // Initialize the audio engine with 8 channels for 7.1 surround sound.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Playback, channels: 8);
+            // Initialize the audio engine with appropriate channels for surround.
+            // For 7.1, use 8 channels.
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Playback, channels: 8);
 
-            // Create a SurroundPlayer and load an audio file.
-            // Make sure the file has a compatible number of channels.
-            var player = new SurroundPlayer(new StreamDataProvider(File.OpenRead("path/to/your/multichannel/audiofile.wav")));
+            // Create a SurroundPlayer. Load a mono or stereo file for surround upmixing,
+            // or a multi-channel file if your source is already surround.
+            // The SurroundPlayer will attempt to pan mono/stereo to the configured speakers.
+            using var dataProvider = new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav")); // Can be mono/stereo
+            var player = new SurroundPlayer(dataProvider);
 
             // Configure the SurroundPlayer for 7.1 surround sound.
             player.SpeakerConfig = SurroundPlayer.SpeakerConfiguration.Surround71;
 
-            // Set the panning method to VBAP.
+            // Set the panning method (VBAP is often good for surround).
             player.Panning = SurroundPlayer.PanningMethod.Vbap;
 
-            // Set the listener position (optional).
-            player.ListenerPosition = new Vector2(0, 0); // Listener is in the center
+            // Set the listener position (optional, (0,0) is center).
+            player.ListenerPosition = new Vector2(0, 0);
 
             // Add the player to the master mixer.
             Mixer.Master.AddComponent(player);
@@ -431,7 +442,7 @@ This tutorial demonstrates how to use `SurroundPlayer` to play audio with surrou
     }
     ```
 
-4. **Replace `"path/to/your/multichannel/audiofile.wav"` with the actual path to a multi-channel audio file.**
+4. **Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file (mono, stereo, or multi-channel).**
 5. **Build and run the application:**
 
     ```
@@ -441,12 +452,7 @@ This tutorial demonstrates how to use `SurroundPlayer` to play audio with surrou
 
 **Explanation:**
 
-This code initializes the `AudioEngine` with 8 channels to support 7.1 surround sound. It then creates a `SurroundPlayer`, loads a multi-channel audio file, configures the player for 7.1 surround sound using `SpeakerConfig`, sets the panning method to VBAP, and optionally sets the listener position. The rest of the code is similar to the basic playback example.
-
-**Note:**
-
-*   Make sure the number of channels in the audio file matches the chosen speaker configuration.
-*   Experiment with different `SpeakerConfiguration`, `PanningMethod`, and `ListenerPosition` values to hear how they affect the surround sound experience.
+This code initializes `AudioEngine` with 8 channels for 7.1. A `SurroundPlayer` is created. If the input `audiofile.wav` is mono or stereo, the `SurroundPlayer` will pan it across the configured 7.1 speaker layout. `SpeakerConfig` and `Panning` method are set. The `ListenerPosition` can also be adjusted.
 
 ### 6. Efficient Playback with ChunkedDataProvider
 
@@ -476,6 +482,7 @@ This tutorial demonstrates how to use the `ChunkedDataProvider` for efficient pl
     using SoundFlow.Components;
     using SoundFlow.Enums;
     using SoundFlow.Providers;
+    using System.IO;
 
     namespace ChunkedPlayback;
 
@@ -484,204 +491,31 @@ This tutorial demonstrates how to use the `ChunkedDataProvider` for efficient pl
         private static void Main(string[] args)
         {
             // Initialize the audio engine.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Playback);
 
             // Create a ChunkedDataProvider and load a large audio file.
-            // Replace "path/to/your/large/audiofile.wav" with the actual path to your audio file.
+            // Replace "path/to/your/large/audiofile.wav" with the actual path.
             using var dataProvider = new ChunkedDataProvider("path/to/your/large/audiofile.wav");
-
-            // Create a SoundPlayer and use the ChunkedDataProvider.
             var player = new SoundPlayer(dataProvider);
 
-            // Add the player to the master mixer.
             Mixer.Master.AddComponent(player);
-
-            // Start playback.
             player.Play();
 
-            // Keep the console application running until playback finishes or the user presses a key.
             Console.WriteLine("Playing audio with ChunkedDataProvider... Press any key to stop.");
             Console.ReadKey();
 
-            // Stop playback.
             player.Stop();
-
-            // Remove the player from the mixer.
             Mixer.Master.RemoveComponent(player);
         }
     }
     ```
 
-4. **Replace `"path/to/your/large/audiofile.wav"` with the actual path to a large audio file on your computer.**
-
-5. **Build and run the application:**
-
-    ```
-    dotnet run
-    ```
+4. **Replace `"path/to/your/large/audiofile.wav"` with the path to a large audio file.**
+5. **Build and run:** `dotnet run`
 </Steps>
 
 **Explanation:**
-
-This code initializes the `AudioEngine`, creates a `ChunkedDataProvider` that loads a large audio file, creates a `SoundPlayer` that uses the `ChunkedDataProvider` as its audio source, adds the player to the `Master` mixer, and starts playback. The `ChunkedDataProvider` will efficiently read and decode the audio file in chunks, preventing memory issues and ensuring smooth playback. The user can change the chunk size using the constructor of `ChunkedDataProvider`.
-
-**Note:**
-
-The `ChunkedDataProvider` is especially useful when working with very large audio files that would consume too much memory if loaded entirely into memory at once. It's also beneficial when you need to seek within a large file, as it only decodes the necessary portions of the file.
-
-### 7. Network Playback with NetworkDataProvider (Direct URL)
-
-This tutorial demonstrates how to use the `NetworkDataProvider` to play audio from a direct URL.
-
-**Steps:**
-
-<Steps>
-1. **Create a new console application:**
-
-    ```
-    dotnet new console -o NetworkPlaybackDirect
-    cd NetworkPlaybackDirect
-    ```
-
-2. **Install the SoundFlow NuGet package:**
-
-    ```
-    dotnet add package SoundFlow
-    ```
-
-3. **Replace the contents of `Program.cs` with the following code:**
-
-    ```csharp
-    using SoundFlow.Abstracts;
-    using SoundFlow.Backends.MiniAudio;
-    using SoundFlow.Components;
-    using SoundFlow.Enums;
-    using SoundFlow.Providers;
-
-    namespace NetworkPlaybackDirect;
-
-    internal static class Program
-    {
-        private static void Main(string[] args)
-        {
-            // Initialize the audio engine.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
-
-            // Create a NetworkDataProvider and provide the URL of an audio file.
-            // Replace "your-direct-audio-url" with the actual URL.
-            using var dataProvider = new NetworkDataProvider("your-direct-audio-url");
-
-            // Create a SoundPlayer and use the NetworkDataProvider.
-            var player = new SoundPlayer(dataProvider);
-
-            // Add the player to the master mixer.
-            Mixer.Master.AddComponent(player);
-
-            // Start playback.
-            player.Play();
-
-            // Keep the console application running until playback finishes or the user presses a key.
-            Console.WriteLine("Playing audio from a direct URL... Press any key to stop.");
-            Console.ReadKey();
-
-            // Stop playback.
-            player.Stop();
-
-            // Remove the player from the mixer.
-            Mixer.Master.RemoveComponent(player);
-        }
-    }
-    ```
-
-4. **Replace `"your-direct-audio-url"` with the actual URL of an audio file on the internet.**
-
-5. **Build and run the application:**
-
-    ```
-    dotnet run
-    ```
-</Steps>
-
-**Explanation:**
-
-This code initializes the `AudioEngine`, creates a `NetworkDataProvider` that connects to the specified URL, creates a `SoundPlayer` that uses the `NetworkDataProvider` as its audio source, adds the player to the `Master` mixer, and starts playback. The `NetworkDataProvider` will download and decode the audio data in the background, and the `SoundPlayer` will play it.
-
-### 8. Network Playback with NetworkDataProvider (HLS Playlist)
-
-This tutorial demonstrates how to use the `NetworkDataProvider` to play audio from an HLS playlist.
-
-**Steps:**
-
-<Steps>
-1. **Create a new console application:**
-
-    ```
-    dotnet new console -o NetworkPlaybackHls
-    cd NetworkPlaybackHls
-    ```
-
-2. **Install the SoundFlow NuGet package:**
-
-    ```
-    dotnet add package SoundFlow
-    ```
-
-3. **Replace the contents of `Program.cs` with the following code:**
-
-    ```csharp
-    using SoundFlow.Abstracts;
-    using SoundFlow.Backends.MiniAudio;
-    using SoundFlow.Components;
-    using SoundFlow.Enums;
-    using SoundFlow.Providers;
-
-    namespace NetworkPlaybackHls;
-
-    internal static class Program
-    {
-        private static void Main(string[] args)
-        {
-            // Initialize the audio engine.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
-
-            // Create a NetworkDataProvider and provide the URL of an HLS playlist.
-            // Replace "your-hls-playlist-url" with the actual URL.
-            using var dataProvider = new NetworkDataProvider("your-hls-playlist-url");
-
-            // Create a SoundPlayer and use the NetworkDataProvider.
-            var player = new SoundPlayer(dataProvider);
-
-            // Add the player to the master mixer.
-            Mixer.Master.AddComponent(player);
-
-            // Start playback.
-            player.Play();
-
-            // Keep the console application running until playback finishes or the user presses a key.
-            Console.WriteLine("Playing audio from an HLS playlist... Press any key to stop.");
-            Console.ReadKey();
-
-            // Stop playback.
-            player.Stop();
-
-            // Remove the player from the mixer.
-            Mixer.Master.RemoveComponent(player);
-        }
-    }
-    ```
-
-4. **Replace `"your-hls-playlist-url"` with the actual URL of an HLS playlist (e.g., an `.m3u8` file).**
-
-5. **Build and run the application:**
-
-    ```
-    dotnet run
-    ```
-</Steps>
-
-**Explanation:**
-
-This code is similar to the previous example, but it uses an HLS playlist URL. The `NetworkDataProvider` will automatically detect that it's an HLS stream, download and parse the playlist, and then download and decode the individual media segments. The `SoundPlayer` will play the audio seamlessly as the segments are downloaded.
+The `ChunkedDataProvider` reads and decodes audio in chunks, suitable for large files. It's `IDisposable` and managed with `using`.
 
 ## Recording
 
@@ -710,6 +544,8 @@ This tutorial demonstrates how to record audio from the default recording device
     using SoundFlow.Backends.MiniAudio;
     using SoundFlow.Components;
     using SoundFlow.Enums;
+    using System;
+    using System.IO;
 
     namespace BasicRecording;
 
@@ -717,62 +553,44 @@ This tutorial demonstrates how to record audio from the default recording device
     {
         private static void Main(string[] args)
         {
-            // Initialize the audio engine for recording with a 44.1kHz sample rate.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Record);
+            // Initialize for recording, e.g., 48kHz.
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Record);
 
-            // Create a Recorder instance, specifying the output file path and encoding format.
-            using var recorder = new Recorder("output.wav", sampleRate: 44100, encodingFormat: EncodingFormat.Wav);
+            string filePath = Path.Combine(Directory.GetCurrentDirectory(), "output.wav");
+            using var recorder = new Recorder(filePath, sampleRate: 48000, encodingFormat: EncodingFormat.Wav);
 
-            // Start recording.
             Console.WriteLine("Recording... Press any key to stop.");
             recorder.StartRecording();
-
-            // Wait for the user to press a key.
             Console.ReadKey();
-
-            // Stop recording.
             recorder.StopRecording();
 
-            Console.WriteLine("Recording stopped. Saved to output.wav");
+            Console.WriteLine($"Recording stopped. Saved to {filePath}");
         }
     }
     ```
-4. **Build and run the application:**
-
-    ```
-    dotnet run
-    ```
+3. **Build and run:** `dotnet run`
 </Steps>
 
 **Explanation:**
+Initializes `AudioEngine` for recording, creates a `Recorder` to save to "output.wav", starts recording, waits for a key, then stops.
 
-This code initializes the `AudioEngine` for recording, creates a `Recorder` instance that will save the recorded audio to `output.wav` using the WAV encoding format, starts recording, waits for the user to press a key, and then stops the recording.
+### 2. Recording with Custom Processing
 
-### 2. Custom Processing
-
-This tutorial demonstrates how to use a custom `ProcessCallback` to process recorded audio in real time.
+This tutorial demonstrates using a callback to process recorded audio in real-time.
 
 **Steps:**
 
 <Steps>
-1. **Create a new console application:**
-
-    ```
-    dotnet new console -o CustomProcessing
-    cd CustomProcessing
-    ```
-2. **Install the SoundFlow NuGet package:**
-
-    ```
-    dotnet add package SoundFlow
-    ```
-3. **Replace the contents of `Program.cs` with the following code:**
+1. **Create a new console application and install SoundFlow.**
+2. **Replace `Program.cs`:**
 
     ```csharp
     using SoundFlow.Abstracts;
     using SoundFlow.Backends.MiniAudio;
     using SoundFlow.Components;
     using SoundFlow.Enums;
+    using System;
+    using System.IO;
 
     namespace CustomProcessing;
 
@@ -780,22 +598,13 @@ This tutorial demonstrates how to use a custom `ProcessCallback` to process reco
     {
         private static void Main(string[] args)
         {
-            // Initialize the audio engine for recording.
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Record);
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Record);
+            using var recorder = new Recorder(ProcessAudio, sampleRate: 48000);
 
-            // Create a Recorder instance with a custom processing callback.
-            using var recorder = new Recorder(ProcessAudio, sampleRate: 44100);
-
-            // Start recording.
-            Console.WriteLine("Recording... Press any key to stop.");
+            Console.WriteLine("Recording with custom processing... Press any key to stop.");
             recorder.StartRecording();
-
-            // Wait for the user to press a key.
             Console.ReadKey();
-
-            // Stop recording.
             recorder.StopRecording();
-
             Console.WriteLine("Recording stopped.");
         }
 
@@ -815,38 +624,21 @@ This tutorial demonstrates how to use a custom `ProcessCallback` to process reco
         }
     }
     ```
-4. **Build and run the application:**
-
-    ```
-    dotnet run
-    ```
+3. **Build and run:** `dotnet run`
 </Steps>
 
 **Explanation:**
+A `Recorder` is created with a `ProcessAudio` callback that gets called with chunks of recorded audio.
 
-This code initializes the `AudioEngine` for recording and creates a `Recorder` instance, passing a custom `ProcessAudio` method as the `AudioProcessCallback`. This method will be called for each chunk of recorded audio samples. In this example, the `ProcessAudio` method simply calculates and prints the average level of the audio, but you can replace this with any custom processing logic.
+### 3. Microphone Playback (Loopback/Monitor)
 
-### 3. Microphone Playback
-
-This tutorial demonstrates how to capture audio from the microphone and play it back in real time using the `MicrophoneDataProvider`.
+This tutorial demonstrates capturing microphone audio and playing it back in real-time.
 
 **Steps:**
 
 <Steps>
-1. **Create a new console application:**
-
-    ```
-    dotnet new console -o MicrophonePlayback
-    cd MicrophonePlayback
-    ```
-
-2. **Install the SoundFlow NuGet package:**
-
-    ```
-    dotnet add package SoundFlow
-    ```
-
-3. **Replace the contents of `Program.cs` with the following code:**
+1. **Create a new console application and install SoundFlow.**
+2. **Replace `Program.cs`:**
 
     ```csharp
     using SoundFlow.Abstracts;
@@ -854,6 +646,7 @@ This tutorial demonstrates how to capture audio from the microphone and play it 
     using SoundFlow.Components;
     using SoundFlow.Enums;
     using SoundFlow.Providers;
+    using System;
 
     namespace MicrophonePlayback;
 
@@ -861,10 +654,8 @@ This tutorial demonstrates how to capture audio from the microphone and play it 
     {
         private static void Main(string[] args)
         {
-            // Initialize the audio engine for mixed-mode operation (playback and recording).
-            using var audioEngine = new MiniAudioEngine(44100, Capability.Mixed);
-
-            // Create a MicrophoneDataProvider instance.
+            // Mixed capability for simultaneous record & playback.
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Mixed);
             using var microphoneDataProvider = new MicrophoneDataProvider();
 
             // Create a SoundPlayer and connect the MicrophoneDataProvider.
@@ -884,24 +675,16 @@ This tutorial demonstrates how to capture audio from the microphone and play it 
 
             // Stop playback and capture.
             player.Stop();
-            microphoneDataProvider.StopCapture();
-
-            // Remove the player from the mixer.
+            microphoneDataProvider.StopCapture(); // Stop capture before provider is disposed by 'using'
             Mixer.Master.RemoveComponent(player);
         }
     }
     ```
-
-4. **Build and run the application:**
-
-    ```
-    dotnet run
-    ```
+3. **Build and run:** `dotnet run`
 </Steps>
 
 **Explanation:**
-
-This code initializes the `AudioEngine` in mixed mode (to allow both playback and recording simultaneously), creates a `MicrophoneDataProvider` to capture audio from the microphone, creates a `SoundPlayer` that uses the `MicrophoneDataProvider` as its audio source, adds the player to the `Master` mixer, starts capturing microphone input, and then starts playback. The audio captured from the microphone will be played back in real-time through the default audio output device.
+Uses `MicrophoneDataProvider` as a source for a `SoundPlayer` to achieve real-time microphone monitoring. `AudioEngine` needs `Capability.Mixed`.
 
 ## Effects
 
@@ -1422,6 +1205,202 @@ This tutorial demonstrates how to use the `Mixer` to combine multiple audio sour
 This code initializes the `AudioEngine`, creates two `SoundPlayer` instances, loads two different audio files, creates an `Oscillator` that generates a sine wave, adds all three components to the `Master` mixer, and starts playback for the players. You will hear the two audio files and the sine wave mixed together.
 
 Experiment with adding more sound sources to the mixer and adjusting their individual volumes and panning using the `Volume` and `Pan` properties of each `SoundComponent`.
+
+
+## Audio Device Management
+
+This tutorial demonstrates how to list available audio devices and switch the playback device.
+
+**Steps:**
+
+<Steps>
+1. **Create a new console application and install SoundFlow.**
+2. **Replace `Program.cs`:**
+
+    ```csharp
+    using SoundFlow.Abstracts;
+    using SoundFlow.Backends.MiniAudio;
+    using SoundFlow.Components;
+    using SoundFlow.Enums;
+    using SoundFlow.Providers;
+    using SoundFlow.Structs; // For DeviceInfo
+    using System;
+    using System.IO;
+    using System.Linq;
+
+    namespace DeviceSwitcher;
+
+    internal static class Program
+    {
+        private static void Main(string[] args)
+        {
+            // Initialize engine (MiniAudioEngine used here)
+            using var engine = new MiniAudioEngine(48000, Capability.Playback);
+
+            Console.WriteLine("Available Playback Devices:");
+            engine.UpdateDevicesInfo();
+            for (int i = 0; i < engine.PlaybackDeviceCount; i++)
+            {
+                Console.WriteLine($"{i}: {engine.PlaybackDevices[i].Name} {(engine.PlaybackDevices[i].IsDefault ? "(Default)" : "")}");
+            }
+            Console.WriteLine($"Current Playback Device: {engine.CurrentPlaybackDevice?.Name ?? "None selected"}");
+
+            // Simple audio playback setup
+            Console.Write("Enter path to an audio file to play: ");
+            string? filePath = Console.ReadLine()?.Trim('"');
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+            {
+                Console.WriteLine("Invalid file path. Exiting.");
+                return;
+            }
+
+            using var dataProvider = new StreamDataProvider(File.OpenRead(filePath));
+            var player = new SoundPlayer(dataProvider);
+            Mixer.Master.AddComponent(player);
+            player.Play();
+            Console.WriteLine($"Playing on {engine.CurrentPlaybackDevice?.Name ?? "default device"}.");
+
+            while (true)
+            {
+                Console.Write("Enter device number to switch to, 'r' to refresh list, or 'q' to quit: ");
+                string? input = Console.ReadLine();
+
+                if (input?.ToLower() == "q") break;
+                if (input?.ToLower() == "r")
+                {
+                    engine.UpdateDevicesInfo();
+                    Console.WriteLine("\nAvailable Playback Devices (Refreshed):");
+                    for (int i = 0; i < engine.PlaybackDeviceCount; i++)
+                    {
+                        Console.WriteLine($"{i}: {engine.PlaybackDevices[i].Name} {(engine.PlaybackDevices[i].IsDefault ? "(Default)" : "")}");
+                    }
+                    Console.WriteLine($"Current Playback Device: {engine.CurrentPlaybackDevice?.Name ?? "None selected"}");
+                    continue;
+                }
+
+                if (int.TryParse(input, out int deviceIndex))
+                {
+                    if (deviceIndex >= 0 && deviceIndex < engine.PlaybackDeviceCount)
+                    {
+                        try
+                        {
+                            Console.WriteLine($"Switching to {engine.PlaybackDevices[deviceIndex].Name}...");
+                            engine.SwitchDevice(engine.PlaybackDevices[deviceIndex], DeviceType.Playback);
+                            Console.WriteLine($"Successfully switched to {engine.CurrentPlaybackDevice?.Name}.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Error switching device: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Invalid device number.");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Invalid input.");
+                }
+            }
+
+            player.Stop();
+            Mixer.Master.RemoveComponent(player);
+        }
+    }
+    ```
+3. **Build and run.** You'll see a list of playback devices. Enter the number of the device you want to switch to while audio is playing.
+</Steps>
+
+**Explanation:**
+The `AudioEngine` (here `MiniAudioEngine`) provides `UpdateDevicesInfo()` to get device lists (`PlaybackDevices`, `CaptureDevices`). `SwitchDevice()` or `SwitchDevices()` can then be used to change the active audio output/input.
+
+## Advanced Voice Processing with WebRTC APM
+
+This tutorial shows how to use the `WebRtcApmModifier` for real-time noise suppression and echo cancellation on microphone input. For offline file processing, refer to the [WebRTC APM Extension documentation](./extensions/webrtc-apm.mdx#offline-processing-with-noisesuppressor).
+
+**Prerequisites:**
+*   SoundFlow core package.
+*   `SoundFlow.Extensions.WebRtc.Apm` NuGet package.
+
+**Steps:**
+
+<Steps>
+1. **Create a console app and install both SoundFlow packages.**
+2. **Replace `Program.cs`:**
+
+    ```csharp
+    using SoundFlow.Abstracts;
+    using SoundFlow.Backends.MiniAudio;
+    using SoundFlow.Components;
+    using SoundFlow.Enums;
+    using SoundFlow.Providers;
+    using SoundFlow.Extensions.WebRtc.Apm; // For enums like NoiseSuppressionLevel
+    using SoundFlow.Extensions.WebRtc.Apm.Modifiers; // For WebRtcApmModifier
+    using System;
+
+    namespace WebRtcApmDemo;
+
+    internal static class Program
+    {
+        private static void Main(string[] args)
+        {
+            // Initialize AudioEngine. 48kHz is good for WebRTC APM.
+            // Capability.Mixed is needed for AEC (to get playback audio for far-end).
+            using var audioEngine = new MiniAudioEngine(48000, Capability.Mixed, channels: 1); // Mono for voice
+
+            // Setup microphone input
+            using var micProvider = new MicrophoneDataProvider();
+            var micPlayer = new SoundPlayer(micProvider) { Name = "MicrophoneInput" };
+
+            // Instantiate and configure WebRtcApmModifier
+            var apmModifier = new WebRtcApmModifier(
+                aecEnabled: true,       // Enable Acoustic Echo Cancellation
+                aecMobileMode: false,
+                aecLatencyMs: 40,       // Adjust based on your system's latency
+
+                nsEnabled: true,        // Enable Noise Suppression
+                nsLevel: NoiseSuppressionLevel.High,
+
+                agc1Enabled: true,      // Enable Automatic Gain Control (AGC1)
+                agcMode: GainControlMode.AdaptiveDigital,
+                agcTargetLevel: -6,     // Target level in dBFS
+                agcLimiter: true,
+
+                hpfEnabled: true        // Enable High Pass Filter
+            );
+            micPlayer.AddModifier(apmModifier);
+
+            // To test AEC, you might want to play some audio simultaneously
+            // For simplicity, this example focuses on mic input processing.
+            // If you play audio through Mixer.Master, AEC will use it as far-end.
+
+            Mixer.Master.AddComponent(micPlayer);
+
+            micProvider.StartCapture();
+            micPlayer.Play();
+
+            Console.WriteLine("Processing microphone with WebRTC APM (AEC, NS, AGC, HPF)...");
+            Console.WriteLine("Speak into your microphone. Press any key to stop.");
+            Console.ReadKey();
+
+            micPlayer.Stop();
+            micProvider.StopCapture();
+            Mixer.Master.RemoveComponent(micPlayer);
+            apmModifier.Dispose(); // Important!
+        }
+    }
+    ```
+3. **Build and run.** Speak into your microphone.
+</Steps>
+
+**Explanation:**
+This setup processes microphone audio in real-time.
+*   `AudioEngine` is set to `Capability.Mixed` and a compatible sample rate (48kHz).
+*   `WebRtcApmModifier` is configured with AEC, NS, AGC, and HPF enabled.
+*   AEC requires a far-end signal. The modifier automatically listens to `AudioEngine.OnAudioProcessed` for `Playback` capability audio to use as the far-end reference. If you were playing music through another `SoundPlayer` added to `Mixer.Master`, that would be the far-end signal.
+*   **Remember to `Dispose()` the `WebRtcApmModifier`** to release native resources.
+
 
 
 ## Analysis
