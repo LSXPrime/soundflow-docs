@@ -443,11 +443,7 @@ This tutorial demonstrates how to use `SurroundPlayer` to play audio with surrou
     ```
 
 4. **Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file (mono, stereo, or multi-channel).**
-5. **Build and run the application:**
-
-    ```
-    dotnet run
-    ```
+5. **Build and run:** `dotnet run`
 </Steps>
 
 **Explanation:**
@@ -556,15 +552,16 @@ This tutorial demonstrates how to record audio from the default recording device
             // Initialize for recording, e.g., 48kHz.
             using var audioEngine = new MiniAudioEngine(48000, Capability.Record);
 
-            string filePath = Path.Combine(Directory.GetCurrentDirectory(), "output.wav");
-            using var recorder = new Recorder(filePath, sampleRate: 48000, encodingFormat: EncodingFormat.Wav);
+            string outputFilePath = Path.Combine(Directory.GetCurrentDirectory(), "output.wav");
+            using var fileStream = new FileStream(outputFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
+            using var recorder = new Recorder(fileStream, sampleRate: 48000, encodingFormat: EncodingFormat.Wav);
 
             Console.WriteLine("Recording... Press any key to stop.");
             recorder.StartRecording();
             Console.ReadKey();
             recorder.StopRecording();
 
-            Console.WriteLine($"Recording stopped. Saved to {filePath}");
+            Console.WriteLine($"Recording stopped. Saved to {outputFilePath}");
         }
     }
     ```
@@ -2170,5 +2167,87 @@ public class WpfVisualizationContext : IVisualizationContext
 ```
 
 Remember to adapt this conceptual example to your specific UI framework and project structure.
+
+
+## Audio Editing & Persistence
+
+This new section covers the powerful non-destructive editing engine introduced in SoundFlow v1.1.0.
+See the dedicated [Editing Engine & Persistence Guide](./editing-engine.mdx) for comprehensive details and examples.
+
+**Key features demonstrated in the guide:**
+*   Creating `Composition`s, `Track`s, and `AudioSegment`s.
+*   Manipulating segment properties: `SourceStartTime`, `SourceDuration`, `TimelineStartTime`.
+*   Using `AudioSegmentSettings`: volume, pan, reverse, looping, fades (`FadeCurveType`).
+
+A simple example of creating a composition and adding a segment:
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Enums;
+using SoundFlow.Providers;
+using SoundFlow.Editing; // New namespace
+using System;
+using System.IO;
+using System.Threading.Tasks;
+
+namespace BasicComposition;
+
+internal static class Program
+{
+    private static async Task Main(string[] args)
+    {
+        // Initialize the audio engine.
+        using var audioEngine = new MiniAudioEngine(48000, Capability.Playback, channels: 1);
+
+        // Create a composition
+        var composition = new Composition("My First Song") { SampleRate = 48000, TargetChannels = 1 };
+
+        // Create a track
+        var track1 = new Track("Vocals");
+        composition.AddTrack(track1);
+
+        // Load an audio file for a segment
+        // Ensure Adam.wav is in your output directory or provide a full path
+        string adamWavPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Adam.wav"); 
+        if (!File.Exists(adamWavPath)) {
+            Console.WriteLine($"Audio file not found: {adamWavPath}");
+            return;
+        }
+        var adamProvider = new StreamDataProvider(File.OpenRead(adamWavPath));
+
+        // Create an audio segment
+        // Play from 0s of source, for 5s duration, place at 1s on timeline
+        var segment1 = new AudioSegment(adamProvider, 
+                                        TimeSpan.Zero, 
+                                        TimeSpan.FromSeconds(5), 
+                                        TimeSpan.FromSeconds(1),
+                                        "Adam_Intro",
+                                        ownsDataProvider: true);
+        
+        // Optionally, modify segment settings
+        segment1.Settings.Volume = 0.9f;
+        segment1.Settings.FadeInDuration = TimeSpan.FromMilliseconds(500);
+
+        track1.AddSegment(segment1);
+        
+        // Create a SoundPlayer for the composition
+        var compositionPlayer = new SoundPlayer(composition); // Composition itself is an ISoundDataProvider
+        Mixer.Master.AddComponent(compositionPlayer);
+        compositionPlayer.Play();
+
+        Console.WriteLine($"Playing composition '{composition.Name}' for {composition.CalculateTotalDuration().TotalSeconds:F1}s... Press any key to stop.");
+        Console.ReadKey();
+
+        compositionPlayer.Stop();
+        Mixer.Master.RemoveComponent(compositionPlayer);
+        
+        composition.Dispose();
+    }
+}
+```
+*For this example to run, you'd need an `Adam.wav` file. The new `SoundFlow.Samples.EditingMixer` project contains sample audio files and more complex editing examples.*
+
 
 These tutorials and examples provide a starting point for using SoundFlow in your own audio applications. Explore the different components, modifiers, analyzers, and visualizers to create a wide range of audio processing and visualization solutions. Refer to the **Core Concepts** and **API Reference** sections of the Wiki for more detailed information about each class and interface.

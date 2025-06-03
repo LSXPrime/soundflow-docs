@@ -266,10 +266,10 @@ This section delves into more advanced topics related to SoundFlow, including ex
             Console.WriteLine("MyNewAudioEngine: Audio device cleaned up.");
         }
 
-        public override ISoundEncoder CreateEncoder(string filePath, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate)
+        public override ISoundEncoder CreateEncoder(Stream stream, EncodingFormat encodingFormat, SampleFormat sampleFormat, int encodingChannels, int sampleRate)
         {
             // Return an instance of your custom ISoundEncoder implementation
-            // return new MyNewAudioEncoder(filePath, encodingFormat, sampleFormat, encodingChannels, sampleRate);
+            // return new MyNewAudioEncoder(stream, encodingFormat, sampleFormat, encodingChannels, sampleRate);
             throw new NotImplementedException();
         }
 
@@ -322,12 +322,13 @@ This section delves into more advanced topics related to SoundFlow, including ex
     Here are some tips for optimizing the performance of your SoundFlow applications:
 
     *   **Buffer Sizes:** Choose appropriate buffer sizes for your use case. Smaller buffers reduce latency but increase CPU overhead. Larger buffers can improve efficiency but may introduce latency. Experiment to find the optimal balance. The audio backend (e.g., MiniAudio) often manages its own internal buffer sizes based on system capabilities and requests.
-    *   **SIMD:** SoundFlow uses SIMD instructions (when available) in the `Mixer` and `MathHelper` classes, and for some operations within `SoundComponent`. Ensure your target platform supports SIMD for better performance.
+    *   **SIMD:** SoundFlow uses SIMD instructions (when available) in the `Mixer` and `MathHelper` classes, and for some operations within `SoundComponent` and the audio conversion pipeline. Ensure your target platform supports SIMD for better performance.
     *   **Profiling:** Use a profiler (like the one built into Visual Studio) to identify performance bottlenecks in your audio processing pipeline.
-    *   **Asynchronous Operations:** For long-running operations (e.g., loading large files, network requests in `NetworkDataProvider`), use asynchronous programming (`async` and `await`) to avoid blocking the main thread or the audio thread.
+    *   **Asynchronous Operations:** For long-running operations (e.g., loading large files, network requests in `NetworkDataProvider`, project saving/loading), use asynchronous programming (`async` and `await`) to avoid blocking the main thread or the audio thread.
     *   **Avoid Allocations:** Minimize memory allocations within the `GenerateAudio` method of `SoundComponent` and the `ProcessSample` or `Process` method of `SoundModifier`. Allocate buffers and other resources in advance, if possible. Use `ArrayPool<T>.Shared` for temporary buffers when unavoidable.
     *   **Efficient Algorithms:** Use efficient algorithms for audio processing, especially in performance-critical sections.
-    *   **Modifier Overhead:** Each `SoundModifier` added to a `SoundComponent` introduces some overhead. For very simple operations, integrating them directly into a custom `SoundComponent` might be more performant than using many tiny modifiers. However, modifiers offer better reusability and modularity.
+    *   **Modifier Overhead:** Each `SoundModifier` added to a `SoundComponent` or `AudioSegment`, `Track`, `Composition` introduces some overhead. For very simple operations, integrating them directly into a custom `SoundComponent` might be more performant than using many tiny modifiers. However, modifiers offer better reusability and modularity.
+    *   **Effect Toggling:** Use the `Enabled` property on `SoundModifier`, `AudioAnalyzer`, `AudioSegmentSettings`, and `TrackSettings` to non-destructively disable effects or entire processing paths instead of removing and re-adding them, which can be more efficient.
   </TabItem>
 
   <TabItem label="Threading Considerations">

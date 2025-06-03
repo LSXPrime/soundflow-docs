@@ -81,36 +81,36 @@ The `WebRtcApmModifier` is a `SoundModifier` that can be added to any `SoundComp
     using SoundFlow.Extensions.WebRtc.Apm.Modifiers;
 
     var apmModifier = new WebRtcApmModifier(
-    // Echo Cancellation (AEC) settings
-    aecEnabled: true,
-    aecMobileMode: false, // Desktop mode is generally more robust
-    aecLatencyMs: 40,     // Estimated system latency for AEC (tune this)
+	    // Echo Cancellation (AEC) settings
+	    aecEnabled: true,
+	    aecMobileMode: false, // Desktop mode is generally more robust
+	    aecLatencyMs: 40,     // Estimated system latency for AEC (tune this)
 
-    // Noise Suppression (NS) settings
-    nsEnabled: true,
-    nsLevel: NoiseSuppressionLevel.High,
+	    // Noise Suppression (NS) settings
+	    nsEnabled: true,
+	    nsLevel: NoiseSuppressionLevel.High,
 
-    // Automatic Gain Control (AGC) - Version 1 (legacy)
-    agc1Enabled: true,
-    agcMode: GainControlMode.AdaptiveDigital,
-    agcTargetLevel: -3,   // Target level in dBFS (0 is max, typical is -3 to -18)
-    agcCompressionGain: 9, // Only for FixedDigital mode
-    agcLimiter: true,
+	    // Automatic Gain Control (AGC) - Version 1 (legacy)
+	    agc1Enabled: true,
+	    agcMode: GainControlMode.AdaptiveDigital,
+	    agcTargetLevel: -3,   // Target level in dBFS (0 is max, typical is -3 to -18)
+	    agcCompressionGain: 9, // Only for FixedDigital mode
+	    agcLimiter: true,
 
-    // Automatic Gain Control (AGC) - Version 2 (newer, often preferred)
-    agc2Enabled: false, // Set to true to use AGC2, potentially disable AGC1
+	    // Automatic Gain Control (AGC) - Version 2 (newer, often preferred)
+	    agc2Enabled: false, // Set to true to use AGC2, potentially disable AGC1
 
-    // High Pass Filter (HPF)
-    hpfEnabled: true,
+	    // High Pass Filter (HPF)
+	    hpfEnabled: true,
 
-    // Pre-Amplifier
-    preAmpEnabled: false,
-    preAmpGain: 1.0f,
+	    // Pre-Amplifier
+	    preAmpEnabled: false,
+	    preAmpGain: 1.0f,
 
-    // Pipeline settings for multi-channel audio (if numChannels > 1)
-    useMultichannelCapture: false, // Process capture (mic) as mono/stereo as configured by AudioEngine
-    useMultichannelRender: false,  // Process render (playback for AEC) as mono/stereo
-    downmixMethod: DownmixMethod.AverageChannels // Method if downmixing is needed
+	    // Pipeline settings for multi-channel audio (if numChannels > 1)
+	    useMultichannelCapture: false, // Process capture (mic) as mono/stereo as configured by AudioEngine
+	    useMultichannelRender: false,  // Process render (playback for AEC) as mono/stereo
+	    downmixMethod: DownmixMethod.AverageChannels // Method if downmixing is needed
     );
 
     // Example of changing a setting dynamically:
@@ -191,14 +191,17 @@ The `NoiseSuppressor` component is designed for batch processing of audio from a
     float[] cleanedAudio = noiseSuppressor.ProcessAll();
     // Now 'cleanedAudio' contains the noise-suppressed audio data.
     // You can save it using an ISoundEncoder:
-    var encoder = audioEngine.CreateEncoder("cleaned_audio.wav", EncodingFormat.Wav, SampleFormat.F32, 1, 48000);
+    var fileStream = new FileStream("cleaned_audio.wav", FileMode.Create, FileAccess.Write, FileShare.None);
+    var encoder = audioEngine.CreateEncoder(fileStream, EncodingFormat.Wav, SampleFormat.F32, 1, 48000);
     encoder.Encode(cleanedAudio.AsSpan());
     encoder.Dispose();
+    fileStream.Dispose();
     ```
 
     **Option B: Process Chunks (via event or direct handler)**
     ```csharp
-    var chunkEncoder = audioEngine.CreateEncoder("cleaned_audio_chunked.wav", EncodingFormat.Wav, SampleFormat.F32, 1, 48000);
+    var chunkFileStream = new FileStream("cleaned_audio_chunked.wav", FileMode.Create, FileAccess.Write, FileShare.None);
+    var chunkEncoder = audioEngine.CreateEncoder(chunkFileStream, EncodingFormat.Wav, SampleFormat.F32, 1, 48000);
 
     noiseSuppressor.OnAudioChunkProcessed += (processedChunk) =>
     {
@@ -211,6 +214,7 @@ The `NoiseSuppressor` component is designed for batch processing of audio from a
     // ProcessChunks is a blocking call until the entire provider is processed.
     noiseSuppressor.ProcessChunks();
     chunkEncoder.Dispose(); // Finalize and save the encoded file
+    chunkFileStream.Dispose();
     ```
 
 5.  **Dispose resources:**
@@ -226,27 +230,28 @@ The `NoiseSuppressor` component is designed for batch processing of audio from a
 
 ### `WebRtcApmModifier` Properties:
 
+*   **`Enabled` (bool):** Enables/disables the entire APM modifier.
 *   **`EchoCancellation` (`EchoCancellationSettings`):**
-*   `Enabled` (bool): Enables/disables AEC.
-*   `MobileMode` (bool): Toggles between desktop (false) and mobile (true) AEC modes.
-*   `LatencyMs` (int): Estimated system audio latency in milliseconds. Crucial for AEC performance. Tune this value for your setup.
+    *   `Enabled` (bool): Enables/disables AEC.
+    *   `MobileMode` (bool): Toggles between desktop (false) and mobile (true) AEC modes.
+    *   `LatencyMs` (int): Estimated system audio latency in milliseconds. Crucial for AEC performance. Tune this value for your setup.
 *   **`NoiseSuppression` (`NoiseSuppressionSettings`):**
-*   `Enabled` (bool): Enables/disables NS.
-*   `Level` (`NoiseSuppressionLevel`): Sets the aggressiveness (Low, Moderate, High, VeryHigh).
+    *   `Enabled` (bool): Enables/disables NS.
+    *   `Level` (`NoiseSuppressionLevel`): Sets the aggressiveness (Low, Moderate, High, VeryHigh).
 *   **`AutomaticGainControl` (`AutomaticGainControlSettings`):**
-*   `Agc1Enabled` (bool): Enables/disables the legacy AGC1.
-*   `Mode` (`GainControlMode`): Sets the mode for AGC1 (AdaptiveAnalog, AdaptiveDigital, FixedDigital).
-                                                  *   `TargetLevelDbfs` (int): Target level for AGC1 AdaptiveDigital mode (-31 to 0 dBFS).
-*   `CompressionGainDb` (int): Gain for AGC1 FixedDigital mode (0 to 90 dB).
-*   `LimiterEnabled` (bool): Enables/disables the limiter for AGC1.
-                                                              *   `Agc2Enabled` (bool): Enables/disables the newer AGC2.
+    *   `Agc1Enabled` (bool): Enables/disables the legacy AGC1.
+    *   `Mode` (`GainControlMode`): Sets the mode for AGC1 (AdaptiveAnalog, AdaptiveDigital, FixedDigital).
+    *   `TargetLevelDbfs` (int): Target level for AGC1 AdaptiveDigital mode (-31 to 0 dBFS).
+    *   `CompressionGainDb` (int): Gain for AGC1 FixedDigital mode (0 to 90 dB).
+    *   `LimiterEnabled` (bool): Enables/disables the limiter for AGC1.
+    *   `Agc2Enabled` (bool): Enables/disables the newer AGC2.
 *   **`HighPassFilterEnabled` (bool):** Enables/disables the HPF.
 *   **`PreAmplifierEnabled` (bool):** Enables/disables the pre-amplifier.
 *   **`PreAmplifierGainFactor` (float):** Gain factor for the pre-amplifier (e.g., 1.0 is no change, 2.0 is +6dB).
 *   **`ProcessingPipeline` (`ProcessingPipelineSettings`):**
-*   `UseMultichannelCapture` (bool): If true and input is multi-channel, APM processes it as such. Otherwise, it might downmix.
-*   `UseMultichannelRender` (bool): Similar to capture, but for the far-end/render signal for AEC.
-                                                                                              *   `DownmixMethod` (`DownmixMethod`): Specifies how to downmix if multi-channel processing is disabled for a stream (AverageChannels, UseFirstChannel).
+    *   `UseMultichannelCapture` (bool): If true and input is multi-channel, APM processes it as such. Otherwise, it might downmix.
+    *   `UseMultichannelRender` (bool): Similar to capture, but for the far-end/render signal for AEC.
+    *   `DownmixMethod` (`DownmixMethod`): Specifies how to downmix if multi-channel processing is disabled for a stream (AverageChannels, UseFirstChannel).
 *   **`PostProcessGain` (float):** A final gain applied after all APM processing (default 1.0f).
 
 ### `NoiseSuppressor` Constructor:

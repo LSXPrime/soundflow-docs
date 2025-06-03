@@ -133,7 +133,7 @@ Mixer.Master.AddComponent(oscillator);
 
 ## Sound Modifiers (`SoundModifier`)
 
-`SoundModifier` is an abstract base class for creating audio effects that modify the audio stream. Modifiers are applied to `SoundComponent` instances and process the audio data.
+`SoundModifier` is an abstract base class for creating audio effects that modify the audio stream. Modifiers are applied to `SoundComponent` instances or to `AudioSegment`, `Track`, `Composition` and process the audio data.
 
 **Key Features:**
 
@@ -191,7 +191,7 @@ Mixer.Master.AddComponent(player);
 
 ## Audio Playback (`SoundPlayer`, `SurroundPlayer`)
 
-SoundFlow provides concrete classes for audio playback, now deriving from `SoundPlayerBase`:
+SoundFlow provides concrete classes for audio playback, deriving from `SoundPlayerBase`:
 
 *   **`SoundPlayer`:** A `SoundPlayerBase` implementation for standard mono or stereo audio playback from an `ISoundDataProvider`.
 *   **`SurroundPlayer`:** An extended `SoundPlayerBase` implementation that supports advanced surround sound configurations.
@@ -222,14 +222,14 @@ The `Recorder` class allows you to capture audio input from a recording device.
 *   `EncodingFormat`: The encoding format to use when saving to a file (e.g., WAV, FLAC), Currently only WAV supported by miniaudio backend.
 *   `SampleRate`: The sample rate for recording.
 *   `Channels`: The number of channels to record.
-*   `FilePath`: The path to the output file (if recording to a file).
+*   `Stream`: The output `Stream` where recorded audio is written.
 *   `ProcessCallback`: A delegate that can be used to process recorded audio samples in real time.
 *   **Voice Activity Detection:** The `Recorder` can be integrated with a `VoiceActivityDetector` to automatically start and stop recording based on the presence of voice activity.
 
 
 ## Audio Providers (`ISoundDataProvider`)
 
-`ISoundDataProvider` is an interface that defines a standard way to access audio data, regardless of its source. **It now implements `IDisposable`.**
+`ISoundDataProvider` is an interface that defines a standard way to access audio data, regardless of its source.
 
 **Key Features:**
 
@@ -246,12 +246,12 @@ The `Recorder` class allows you to capture audio input from a recording device.
 
 **Built-in Providers:**
 
-*   `AssetDataProvider`: Loads audio data from a byte array.
+*   `AssetDataProvider`: Loads audio data from a byte array or `Stream`.
 *   `StreamDataProvider`: Reads audio data from a `Stream`.
 *   `MicrophoneDataProvider`: Captures audio data from the microphone in real-time.
 *   `ChunkedDataProvider`: Reads audio data from a file or stream in chunks.
 *   `NetworkDataProvider`: Reads audio data from a network source (URL, HLS).
-*   `RawDataProvider`: Reads audio data from a raw PCM stream.
+*   `RawDataProvider`: Reads audio data from a raw PCM stream or various raw array types (`float[]`, `byte[]`, `int[]`, `short[]`).
 
 It's good practice to dispose of `ISoundDataProvider` instances when they are no longer needed, for example, using a `using` statement.
 
@@ -282,6 +282,7 @@ The `MiniAudio` backend provides implementations of these interfaces using the `
 **Key Features:**
 
 *   `Analyze(Span<float> buffer)`: An abstract method that derived classes must implement to perform their specific analysis.
+*   `Enabled`: If false, the `Analyze` step might be skipped by the `SoundComponent` it's attached to.
 *   **Integration with Visualizers:** Analyzers are often used in conjunction with `IVisualizer` implementations to display the analysis results visually.
 
 **Built-in Analyzers:**
@@ -312,3 +313,23 @@ This interface provides a set of drawing methods for rendering the visualization
 *   Level Meter Visualizer: Displays a level meter that shows the current RMS or peak level of the audio.
 *   Spectrum Visualizer: Renders a bar graph representing the frequency spectrum of the audio.
 *   Waveform Visualizer: Draws the waveform of the audio signal.
+
+## Editing Engine & Persistence (`SoundFlow.Editing`, `SoundFlow.Editing.Persistence`)
+
+SoundFlow v1.1.0 introduces a powerful non-destructive audio editing engine. For a detailed guide, please see the [Editing Engine & Persistence](./editing-engine.mdx) documentation.
+
+**Key Concepts:**
+
+*   **`Composition`**: The main container for an audio project, holding multiple `Track`s. It can be rendered or played back.
+*   **`Track`**: Represents a single audio track within a `Composition`. Contains `AudioSegment`s and has its own settings (volume, pan, mute, solo, effects).
+*   **`AudioSegment`**: A clip of audio placed on a `Track`'s timeline. It references a portion of an `ISoundDataProvider` and has its own extensive settings.
+    *   **`AudioSegmentSettings`**: Controls volume, pan, fades (with `FadeCurveType`), looping (`LoopSettings`), reverse playback, speed, and **pitch-preserved time stretching** (via `TimeStretchFactor` or `TargetStretchDuration`, powered by `WsolaTimeStretcher`).
+    *   Supports segment-level modifiers and analyzers.
+*   **Non-Destructive:** Edits do not alter the original audio source files. All operations are applied at runtime during playback or rendering.
+*   **Project Persistence (`CompositionProjectManager`)**:
+    *   Save and load entire compositions as `.sfproj` files.
+    *   **Media Consolidation**: Option to copy all external audio files into an `Assets` folder within the project.
+    *   **Embed Small Media**: Option to embed small audio files (e.g., SFX) directly into the project file.
+    *   **Relink Missing Media**: If an audio file is moved, the project can be relinked to its new location.
+
+This new engine allows for programmatic creation and manipulation of complex audio timelines, effects processing at multiple levels (segment, track, master), and robust project management.

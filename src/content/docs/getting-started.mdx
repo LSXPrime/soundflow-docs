@@ -26,7 +26,8 @@ Before you begin, make sure you have the following installed:
 *   macOS
 *   Linux
 *   Android
-*   IOS
+*   iOS
+*   FreeBSD
 
 ## Installation
 
@@ -135,7 +136,8 @@ Let's create a simple console application that plays an audio file using SoundFl
 
             // Create a SoundPlayer and load an audio file.
             // Make sure you replace "path/to/your/audiofile.wav" with the actual path to your audio file.
-            var player = new SoundPlayer(new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav")));
+            using var dataProvider = new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav"));
+            var player = new SoundPlayer(dataProvider);
 
             // Add the player to the master mixer. This connects the player's output to the audio engine's output.
             Mixer.Master.AddComponent(player);
@@ -174,7 +176,8 @@ You should now hear the audio file playing through your default audio output dev
 
 *   `using SoundFlow...`: These lines import the necessary namespaces from the SoundFlow library.
 *   `using var audioEngine = new MiniAudioEngine(...)`: This creates an instance of the `MiniAudioEngine`, which is the default audio backend for SoundFlow. It's initialized with a sample rate of 44100 Hz and playback capability. The `using` statement ensures that the engine is properly disposed of when it's no longer needed.
-*   `var player = new SoundPlayer(...)`: This creates a `SoundPlayer` instance and loads the specified audio file using a `StreamDataProvider`.
+*   `using var dataProvider = new StreamDataProvider(...)`: Creates a `StreamDataProvider` to load the audio file. `ISoundDataProvider` (which `StreamDataProvider` implements) is now `IDisposable`, so it's good practice to use a `using` statement.
+*   `var player = new SoundPlayer(dataProvider)`: This creates a `SoundPlayer` instance with the loaded audio data.
 *   `Mixer.Master.AddComponent(player)`: This adds the `SoundPlayer` to the `Master` mixer. The `Master` mixer is the root of the audio graph and represents the final output of the audio engine.
 *   `player.Play()`: This starts the playback of the audio file.
 *   `Console.WriteLine(...)` and `Console.ReadKey()`: These lines keep the console application running and wait for the user to press a key.
@@ -198,6 +201,7 @@ If you encounter any other issues, please open an issue on the [GitHub repositor
 Now that you have successfully set up SoundFlow and played your first audio file, you can explore the more advanced features and concepts covered in this Wiki:
 
 *   [Core Concepts](./core-concepts): Learn more about the fundamental building blocks of SoundFlow.
+*   [Editing Engine & Persistence](./editing-engine): Discover the powerful new non-destructive editing and project saving capabilities.
 *   [API Reference](./api-reference): Dive into the detailed documentation for each class and interface.
 *   [Tutorials and Examples](./tutorials-and-examples): Get hands-on experience with various SoundFlow features.
 *   [WebRTC APM Extension](./extensions/webrtc-apm): Explore advanced voice processing features like noise suppression and echo cancellation.

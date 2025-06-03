@@ -4,7 +4,7 @@ description: Welcome to the SoundFlow Documentation! Your central hub for all in
 template: splash
 hero:
   tagline:  Craft Immersive Audio Experiences with SoundFlow
-  description: The premier .NET audio engine for cross-platform development, offering unparalleled power and flexibility. Build robust, real-time audio applications for Windows, macOS, Linux, Android, and iOS – all from a single codebase.
+  description: The premier .NET audio engine for cross-platform development, offering unparalleled power and flexibility. Build robust, real-time audio applications with advanced editing, effects, and persistence for Windows, macOS, Linux, Android, iOS, and FreeBSD – all from a single codebase.
   image:
     file: ../../assets/soundflow-hero.png
     alt: SoundFlow Logo
@@ -17,18 +17,26 @@ hero:
       link: https://github.com/LSXPrime/SoundFlow
       variant: secondary
       icon: github
+    - text: Explore the New Editing Engine
+      link: editing-engine
+      variant: minimal
+      icon: pencil
 ---
 
 import {Card, CardGrid} from '@astrojs/starlight/components';
 
 ## Unlock the Potential of Sound
 
-SoundFlow isn't just an audio engine; it's your toolkit for sonic innovation in .NET. Whether you're crafting interactive music applications, developing cutting-edge games, or building professional audio tools, SoundFlow empowers you with the features and performance you need to bring your auditory visions to life.
+SoundFlow isn't just an audio engine; it's your toolkit for sonic innovation in .NET. Whether you're crafting interactive music applications, developing cutting-edge games, building professional audio tools, or creating dynamic audio content, SoundFlow empowers you with the features and performance you need to bring your auditory visions to life.
 
 <CardGrid>
     <Card title="Quick Start Guide" icon="right-arrow">
         Jump directly into building with SoundFlow. Our Getting Started guide provides a clear path to your first audio application.
         <p><a href="/soundflow-docs/getting-started/">Launch your project →</a></p>
+    </Card>
+    <Card title="Editing & Persistence Engine" icon="pencil">
+        Discover the powerful non-destructive editing capabilities. Build complex timelines, apply effects, and save/load your projects with ease.
+        <p><a href="/soundflow-docs/editing-engine/">Master Audio Editing →</a></p>
     </Card>
     <Card title="Understand the Architecture" icon="open-book">
         Grasp the core concepts that power SoundFlow.  Learn how its modular design and flexible pipeline can shape your audio creations.
@@ -50,10 +58,16 @@ Discover what sets SoundFlow apart and makes it the ideal choice for your .NET a
 
 <CardGrid stagger>
     <Card title="Truly Cross-Platform" icon="laptop">
-        Write once, deploy everywhere. Target Windows, macOS, Linux, Android, and iOS with seamless compatibility.
+        Write once, deploy everywhere. Target Windows, macOS, Linux, Android, iOS, and now FreeBSD with seamless compatibility.
+    </Card>
+    <Card title="Non-Destructive Editing" icon="gitter">
+        Programmatically build complex audio compositions with tracks, segments, pitch-preserved time stretching, looping, fades, and more.
+    </Card>
+    <Card title="Project Persistence" icon="download">
+        Save and load entire audio projects. Consolidate media assets and relink missing files for robust project management.
     </Card>
     <Card title="Unmatched Audio Versatility" icon="seti:audio">
-        From basic playback to advanced spatial audio, SoundFlow handles it all: playback, recording, mixing, effects, analysis, and visualization.
+        From basic playback to advanced spatial audio and complex editing, SoundFlow handles it all: playback, recording, mixing, effects, analysis, and visualization.
     </Card>
     <Card title="Infinite Extensibility" icon="puzzle">
         Tailor SoundFlow to your exact needs.  Easily extend its functionality with custom components, modifiers, and visualizers.
@@ -61,7 +75,7 @@ Discover what sets SoundFlow apart and makes it the ideal choice for your .NET a
     <Card title="Uncompromising Real-time Performance" icon="rocket">
         Experience low-latency, high-efficiency audio processing, essential for real-time interactive applications.
     </Card>
-    <Card title="Plug & Play Integrations" icon="plug">
+    <Card title="Plug & Play Integrations" icon="seti:code-climate">
         Enhance SoundFlow with official extensions like the **WebRTC APM** for advanced voice processing (AEC, NS, AGC).
         <p><a href="/soundflow-docs/extensions/webrtc-apm/">Explore WebRTC APM Extension →</a></p>
     </Card>
@@ -86,6 +100,7 @@ Discover what sets SoundFlow apart and makes it the ideal choice for your .NET a
 
 *   <a href="/soundflow-docs/tutorials-and-examples#playback">**Playback Mastery:**</a> Learn to play audio from files, streams, and network sources.
 *   <a href="/soundflow-docs/tutorials-and-examples#recording">**Recording & Capture:**</a> Capture audio input and process it in real-time.
+*   <a href="/soundflow-docs/editing-engine/">**Editing & Project Management:**</a> Dive into compositions, tracks, segments, time-stretching, and saving/loading projects.
 *   <a href="/soundflow-docs/tutorials-and-examples#effects">**Sound Effects Suite:**</a> Explore and apply a wide range of built-in audio effects to enrich your sound.
 *   <a href="/soundflow-docs/tutorials-and-examples#analysis">**Advanced Audio Analysis:**</a> Utilize powerful analysis tools for level metering, spectrum analysis, and voice detection.
 *   <a href="/soundflow-docs/tutorials-and-examples#visualization">**Interactive Visualizations:**</a> Create dynamic audio visualizations to enhance user engagement.

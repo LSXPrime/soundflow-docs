@@ -60,6 +60,26 @@ export default defineConfig({
 						{ label: 'Audio Analysis', link: '/core-concepts#audio-analysis-audioanalyzer' },
 						{ label: 'Audio Visualization', link: '/core-concepts#audio-visualization-ivisualizer' },
 						{ label: 'Visualization Context', link: '/core-concepts#visualization-context-ivisualizationcontext' },
+						{ label: 'Editing Engine & Persistence', link: '/core-concepts#new-editing-engine-persistence-soundflowediting-soundfloweditingpersistence' },
+					],
+				},
+				{
+					label: 'Editing Engine & Persistence',
+					items: [
+						{ label: 'Core Editing Concepts', link: '/editing-engine#core-editing-concepts' },
+						{ label: 'Composition', link: '/editing-engine#1-composition-soundfloweditingcomposition'},
+						{ label: 'Track', link: '/editing-engine#2-track-soundfloweditingtrack'},
+						{ label: 'AudioSegment', link: '/editing-engine#3-audiosegment-soundfloweditingaudiosegment'},
+						{ label: 'Duration Calculations', link: '/editing-engine#duration-calculations'},
+						{ label: 'Time Manipulation', link: '/editing-engine#time-manipulation'},
+						{ label: 'Pitch-Preserved Time Stretching', link: '/editing-engine#pitch-preserved-time-stretching'},
+						{ label: 'Classic Speed Control', link: '/editing-engine#classic-speed-control-varispeed'},
+						{ label: 'Project Persistence', link: '/editing-engine#project-persistence-soundfloweditingpersistence'},
+						{ label: 'Saving a Project', link: '/editing-engine#saving-a-project'},
+						{ label: 'Loading a Project', link: '/editing-engine#loading-a-project'},
+						{ label: 'Media Management & Relinking', link: '/editing-engine#media-management--relinking'},
+						{ label: 'Dirty Flag (IsDirty)', link: '/editing-engine#dirty-flag-isdirty'},
+						{ label: 'Examples in Action', link: '/editing-engine#examples-in-action'},
 					],
 				},
 				{
@@ -72,6 +92,8 @@ export default defineConfig({
 								{ label: 'Abstracts', link: '/api-reference#abstracts' },
 								{ label: 'Backends.MiniAudio', link: '/api-reference#backendsminiaudio' },
 								{ label: 'Components', link: '/api-reference#components' },
+								{ label: 'Editing', link: '/api-reference#editing' },
+								{ label: 'Editing.Persistence', link: '/api-reference#editingpersistence' },
 								{ label: 'Enums', link: '/api-reference#enums' },
 								{ label: 'Exceptions', link: '/api-reference#exceptions' },
 								{ label: 'Interfaces', link: '/api-reference#interfaces' },
@@ -119,6 +141,17 @@ export default defineConfig({
 								{ label: 'Noise Reduction', link: '/tutorials-and-examples#5-noise-reduction' },
 								{ label: 'Mixing', link: '/tutorials-and-examples#6-mixing' },
 							],
+						},
+						{
+							label: 'Audio Editing & Persistence',
+							items: [
+								{ label: 'Creating a Basic Composition', link: '/tutorials-and-examples#audio-editing--persistence-new-section' },
+								{ label: 'Full Guide', link: '/editing-engine' }
+							]
+						},
+						{
+							label: 'Advanced Voice Processing',
+							link: '/tutorials-and-examples#advanced-voice-processing-with-webrtc-apm',
 						},
 						{
 							label: 'Analysis',
