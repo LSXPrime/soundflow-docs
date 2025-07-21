@@ -1,0 +1,244 @@
+---
+title: Getting Started with SoundFlow
+description: Learn how to install the library, set up your development environment, and write your first SoundFlow application.
+navOrder: 1
+category: Core
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs} from "@heroui/react";
+import { Steps, Step } from '/src/components/Shared/Steps';
+
+# Getting Started with SoundFlow
+
+This guide will help you get up and running with SoundFlow quickly. You'll learn how to install the library, set up your development environment, and write your first SoundFlow application.
+
+## Prerequisites
+
+Before you begin, make sure you have the following installed:
+
+*   **[.NET SDK 8.0](https://dotnet.microsoft.com/download/dotnet/8.0) or later:** SoundFlow is built on .NET 8.0, so you'll need the corresponding SDK to build and run SoundFlow projects.
+*   **An IDE or code editor:** You can use any IDE or code editor that supports .NET development. Popular choices include:
+    *   [Visual Studio](https://visualstudio.microsoft.com/) (Recommended for Windows)
+    *   [Visual Studio Code](https://code.visualstudio.com/) (Cross-platform)
+    *   [JetBrains Rider](https://www.jetbrains.com/rider/) (Cross-platform)
+*   **Basic knowledge of C# and .NET:** Familiarity with C# programming and .NET concepts will be helpful.
+
+**Supported Operating Systems:**
+
+*   Windows
+*   macOS
+*   Linux
+*   Android
+*   iOS
+*   FreeBSD
+
+## Installation
+
+You can install SoundFlow in several ways:
+
+<Tabs color="primary" variant="bordered" aria-label="Installation options">
+    <Tab
+        key="nuget"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:nuget' />
+                <span>NuGet Package Manager</span>
+            </div>
+        }
+    >
+        ### Option 1: Using the NuGet Package Manager (Recommended)
+
+        This is the easiest and recommended way to add SoundFlow to your .NET projects.
+
+        1. **Open the NuGet Package Manager Console:** In Visual Studio, go to `Tools` > `NuGet Package Manager` > `Package Manager Console`.
+        2. **Run the installation command:**
+
+        ```bash
+        Install-Package SoundFlow
+        ```
+
+        This command will download and install the latest version of SoundFlow and its dependencies into your current project.
+    </Tab>
+
+    <Tab
+        key="cli"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:dotnet' />
+                <span>.NET CLI</span>
+            </div>
+        }
+    >
+        ### Option 2: Using the .NET CLI
+
+        1. **Open your terminal or command prompt.**
+        2. **Navigate to your project directory.**
+        3. **Run the following command:**
+
+        ```bash
+        dotnet add package SoundFlow
+        ```
+
+        This command will add a reference to the SoundFlow package in your project file (`.csproj`).
+    </Tab>
+
+    <Tab
+        key="source"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:git' />
+                <span>Building from Source</span>
+            </div>
+        }
+    >
+        ### Option 3: Building from Source
+
+        If you want to use the latest development version of SoundFlow or contribute to the project, you can build it from source:
+
+        1. **Clone the SoundFlow repository:**
+
+        ```bash
+        git clone https://github.com/LSXPrime/SoundFlow.git
+        ```
+
+        2. **Navigate to the cloned directory:**
+
+        ```bash
+        cd SoundFlow
+        ```
+
+        3. **Build the project using the .NET CLI:**
+
+        ```bash
+        dotnet build
+        ```
+    </Tab>
+</Tabs>
+
+## Basic Usage Example
+
+Let's create a simple console application that plays an audio file using SoundFlow.
+
+<Steps layout='horizontal' variant='glow' nextLabel='Got it, Next' finishLabel='All Done!' resetLabel='Start Again' summaryMessage="Congratulations! You've built and run your first audio application with SoundFlow. Feel free to experiment with the code or start over.">
+    <Step title="Create Project" description="Use VS or .NET CLI" icon='ic:outline-create-new-folder'>
+        ### 1. Create a new console application:
+        *   In Visual Studio, go to `File` > `New` > `Project`. Select `Console App` and give it a name (e.g., `SoundFlowExample`).
+        *   Or, use the .NET CLI:
+
+        ```bash
+        dotnet new console -o SoundFlowExample
+        cd SoundFlowExample
+        ```
+    </Step>
+
+    <Step title="Install Package" description="Add SoundFlow via NuGet" icon='lucide:download'>
+        ### 2. Install the SoundFlow NuGet package: (If you haven't already)
+
+        ```bash
+        Install-Package SoundFlow
+        ```
+
+        <div style={{textAlign: 'center'}}>OR</div>
+
+        ```bash
+        dotnet add package SoundFlow
+        ```
+    </Step>
+
+    <Step title="Write Code" description="Implement the audio player" icon='ph:code-bold'>
+        ### 3. Replace the contents of `Program.cs` with the following code:
+
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Backends.MiniAudio;
+        using SoundFlow.Components;
+        using SoundFlow.Enums;
+        using SoundFlow.Providers;
+
+        namespace SoundFlowExample;
+
+        internal static class Program
+        {
+            private static void Main(string[] args)
+            {
+                // Initialize the audio engine with the MiniAudio backend, 44.1kHz sample rate, and playback capability.
+                using var audioEngine = new MiniAudioEngine(44100, Capability.Playback);
+
+                // Create a SoundPlayer and load an audio file.
+                // Make sure you replace "path/to/your/audiofile.wav" with the actual path to your audio file.
+                using var dataProvider = new StreamDataProvider(File.OpenRead("path/to/your/audiofile.wav"));
+                var player = new SoundPlayer(dataProvider);
+
+                // Add the player to the master mixer. This connects the player's output to the audio engine's output.
+                Mixer.Master.AddComponent(player);
+
+                // Start playback.
+                player.Play();
+
+                // Keep the console application running until playback finishes or the user presses a key.
+                Console.WriteLine("Playing audio... Press any key to stop.");
+                Console.ReadKey();
+
+                // Stop playback.
+                player.Stop();
+
+                // Remove the player from the mixer.
+                Mixer.Master.RemoveComponent(player);
+            }
+        }
+        ```
+        ***Replace `path/to/your/audiofile.wav` with the actual path to an audio file on your computer.***
+    </Step>
+
+    <Step title="Run" description="Build and run the app" icon='lucide:audio-lines'>
+        ### 4. Build and run the application:
+        *   In Visual Studio, press `F5` or go to `Debug` > `Start Debugging`.
+
+        <div style={{textAlign: 'center'}}>OR</div>
+
+        *  use the .NET CLI:
+
+        ```bash
+        dotnet run
+        ```
+    </Step>
+</Steps>
+
+You should now hear the audio file playing through your default audio output device.
+
+**Code Explanation:**
+
+*   `using SoundFlow...`: These lines import the necessary namespaces from the SoundFlow library.
+*   `using var audioEngine = new MiniAudioEngine(...)`: This creates an instance of the `MiniAudioEngine`, which is the default audio backend for SoundFlow. It's initialized with a sample rate of 44100 Hz and playback capability. The `using` statement ensures that the engine is properly disposed of when it's no longer needed.
+*   `using var dataProvider = new StreamDataProvider(...)`: Creates a `StreamDataProvider` to load the audio file. `ISoundDataProvider` (which `StreamDataProvider` implements) is now `IDisposable`, so it's good practice to use a `using` statement.
+*   `var player = new SoundPlayer(dataProvider)`: This creates a `SoundPlayer` instance with the loaded audio data.
+*   `Mixer.Master.AddComponent(player)`: This adds the `SoundPlayer` to the `Master` mixer. The `Master` mixer is the root of the audio graph and represents the final output of the audio engine.
+*   `player.Play()`: This starts the playback of the audio file.
+*   `Console.WriteLine(...)` and `Console.ReadKey()`: These lines keep the console application running and wait for the user to press a key.
+*   `player.Stop()`: This stops the playback.
+*   `Mixer.Master.RemoveComponent(player)`: This removes the `SoundPlayer` from the `Master` mixer, disconnecting it from the audio graph.
+
+
+## Troubleshooting
+
+*   **"Could not load file or assembly 'SoundFlow'..."**: Make sure you have installed the SoundFlow NuGet package or added a reference to the SoundFlow library if you built it from source.
+*   **No audio output**:
+    *   Verify that your audio device is properly configured and selected as the default output device in your operating system's sound settings.
+    *   Check the volume levels in your operating system and in the SoundFlow application.
+    *   Ensure that the audio file you are trying to play is in a supported format and is not corrupted.
+*   **Errors during installation**: If you encounter errors while installing the NuGet package, try clearing your NuGet cache (`dotnet nuget locals all --clear`) and try again.
+
+If you encounter any other issues, please open an issue on the [GitHub repository](https://github.com/LSXPrime/SoundFlow).
+
+## Next Steps
+
+Now that you have successfully set up SoundFlow and played your first audio file, you can explore the more advanced features and concepts covered in this Wiki:
+
+*   [Core Concepts](./core-concepts): Learn more about the fundamental building blocks of SoundFlow.
+*   [Editing Engine & Persistence](./editing-engine): Discover the powerful new non-destructive editing and project saving capabilities.
+*   [API Reference](./api-reference): Dive into the detailed documentation for each class and interface.
+*   [Tutorials and Examples](./tutorials-and-examples): Get hands-on experience with various SoundFlow features.
+*   [WebRTC APM Extension](./extensions/webrtc-apm): Explore advanced voice processing features like noise suppression and echo cancellation.
+
+Happy coding!

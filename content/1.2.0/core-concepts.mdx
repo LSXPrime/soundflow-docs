@@ -1,0 +1,384 @@
+---
+id: 2
+title: Core Concepts
+description: Learn the fundamental building blocks of SoundFlow and how they interact to create a powerful and flexible audio processing pipeline.
+navOrder: 2
+category: Core
+---
+
+# Core Concepts
+
+This section explains the fundamental building blocks of SoundFlow and how they interact to create a powerful and flexible audio processing pipeline. Understanding these core concepts is essential for effectively using and extending the SoundFlow framework.
+
+The v1.2.0 architecture is built around a clear separation of concerns:
+1.  The **`AudioEngine`** acts as a central context and device factory.
+2.  **`AudioDevice`** instances represent the actual hardware I/O streams.
+3.  **`SoundComponent`** instances form the audio processing graph for each device.
+
+## Audio Engine (`AudioEngine`)
+
+The `AudioEngine` is the top-level object in SoundFlow. It's a central context responsible for:
+
+*   **Initializing and managing the audio backend:** SoundFlow supports multiple audio backends (e.g., `MiniAudio`), which handle the low-level interaction with the operating system's audio API. The `AudioEngine` abstracts away the backend details.
+*   **Discovering and Enumerating Audio Devices:** The engine can list all available playback and capture devices and allows switching between them during runtime.
+*   **Acting as a Device Factory:** The primary role of the engine is to initialize `AudioDevice` instances (e.g., `AudioPlaybackDevice`, `AudioCaptureDevice`) which you will use for I/O.
+*   **Managing Global State:** It handles global features like the soloing system (`SoloComponent`/`UnsoloComponent`).
+
+> **Key Change in v1.2:** The `AudioEngine` is no longer a device. You initialize it once without parameters like sample rate or channels. These are now defined per-device.
+
+**Key Properties:**
+
+*   `PlaybackDevices`, `CaptureDevices`: Lists of available audio devices. Must be refreshed with `UpdateDevicesInfo()`.
+*   `IsDisposed`: Indicates whether the engine has been disposed.
+
+**Key Methods:**
+
+*   `InitializePlaybackDevice(...)`: Creates and returns a new `AudioPlaybackDevice` for audio output.
+*   `InitializeCaptureDevice(...)`: Creates and returns a new `AudioCaptureDevice` for audio input.
+*   `InitializeFullDuplexDevice(...)`: A convenience method to create a paired playback and capture device for live monitoring or VoIP.
+*   `InitializeLoopbackDevice(...)`: Creates a capture device to record system audio output (Windows only).
+*   `SwitchDevice(...)`: Switches an active device to a new physical device while preserving its state.
+*   `CreateEncoder(...)`, `CreateDecoder(...)`: Creates instances of backend-specific audio encoders and decoders.
+*   `UpdateDevicesInfo()`: Refreshes the `PlaybackDevices` and `CaptureDevices` lists.
+*   `Dispose()`: Releases the engine and all associated devices.
+
+**Example:**
+
+```csharp
+// 1. Initialize the engine context. It doesn't start any devices.
+using var engine = new MiniAudioEngine();
+
+// 2. List available playback devices.
+engine.UpdateDevicesInfo();
+Console.WriteLine("Available Playback Devices:");
+foreach(var device in engine.PlaybackDevices)
+{
+    Console.WriteLine($"- {device.Name} {(device.IsDefault ? "(Default)" : "")}");
+}
+```
+
+## Audio Devices (`AudioDevice`)
+
+New in v1.2, the `AudioDevice` and its derivatives (`AudioPlaybackDevice`, `AudioCaptureDevice`) represent an active audio stream to a physical hardware device. Each device is an independent entity with its own audio format, lifecycle, and processing graph.
+
+### `AudioPlaybackDevice` (Output)
+An `AudioPlaybackDevice` manages an audio output stream.
+
+*   **Owns a `MasterMixer`:** Each playback device has its own `MasterMixer` property. This is the root of the audio graph for that specific device. All components you want to hear on this device must be added to its mixer.
+*   **Independent `AudioFormat`:** Can be initialized with a specific sample rate, channel count, and sample format.
+*   **Lifecycle:** Must be explicitly started with `Start()` and stopped with `Stop()`. It is `IDisposable` and should be managed with a `using` statement.
+
+### `AudioCaptureDevice` (Input)
+An `AudioCaptureDevice` manages an audio input stream.
+
+*   **`OnAudioProcessed` Event:** This event is raised whenever a new buffer of audio is captured from the hardware. You can subscribe to this event to process live microphone data.
+*   **Lifecycle:** Also has its own `Start()`, `Stop()`, and `Dispose()` methods.
+
+> For a deep dive into creating, managing, and switching devices, see the **[Device Management](./device-management)** documentation.
+
+## Sound Components (`SoundComponent`)
+
+`SoundComponent` remains the abstract base class for all audio processing units in SoundFlow (oscillators, players, filters, mixers). Each component represents a node in a directed acyclic graph (DAG), known as the **audio graph**.
+
+**Key Changes in v1.2:**
+
+*   **Explicit Context:** The constructor now requires an `AudioEngine` and an `AudioFormat`. This makes the component aware of its operating context without relying on a global static instance.
+*   **Graph per Device:** Audio graphs are now built *per device*. A component is typically part of a single device's graph via its `MasterMixer`.
+
+**Key Features:**
+
+*   **Modular Processing:** Components encapsulate specific audio processing logic, making the system modular and extensible.
+*   **Input and Output Connections:** Components can have zero or more input and output connections, allowing data to flow between them.
+*   **`GenerateAudio(Span<float> buffer, int channels)`:** The core processing method that derived classes must implement.
+    *   **Generate new audio samples:** For source components like oscillators or file players.
+    *   **Modify existing audio samples:** For effects, filters, or analyzers.
+*   **Properties:**
+    *   `Name`: A descriptive name for the component.
+    *   `Volume`: Controls the output gain.
+    *   `Pan`: Controls the stereo panning (0.0 for full left, 0.5 for center, 1.0 for full right).
+    *   `Enabled`: Enables or disables the component's processing.
+    *   `Solo`: Isolates the component for debugging.
+    *   `Mute`: Silences the component's output.
+    *   `Parent`: The `Mixer` to which this component belongs (if any).
+*   **Methods:**
+    *   `ConnectInput(SoundComponent input)`: Connects another component's output to this component's input.
+    *   `DisconnectInput(SoundComponent input)`: Disconnects an input connection.
+    *   `AddAnalyzer(AudioAnalyzer analyzer)`: Adds an `AudioAnalyzer` to this component.
+    *   `RemoveAnalyzer(AudioAnalyzer analyzer)`: Removes an `AudioAnalyzer` from this component.
+    *   `AddModifier(SoundModifier modifier)`: Adds a `SoundModifier` to this component.
+    *   `RemoveModifier(SoundModifier modifier)`: Removes a `SoundModifier` from this component.
+
+**Example:**
+
+```csharp
+// A SineWaveGenerator component aware of its format.
+public class SineWaveGenerator : SoundComponent
+{
+    public float Frequency { get; set; } = 440f;
+    private float _phase;
+
+    // The constructor now takes the engine and format context.
+    public SineWaveGenerator(AudioEngine engine, AudioFormat format) : base(engine, format) { }
+
+    protected override void GenerateAudio(Span<float> buffer, int channels)
+    {
+        // Now uses the component's own Format property
+        var sampleRate = this.Format.SampleRate; 
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            buffer[i] = MathF.Sin(_phase);
+            _phase += 2 * MathF.PI * Frequency / sampleRate;
+            if (_phase > 2 * MathF.PI) _phase -= 2 * MathF.PI;
+        }
+    }
+}
+```
+
+## Mixer (`Mixer`)
+
+The `Mixer` is a specialized `SoundComponent` that combines the output of multiple `SoundComponent` instances into a single audio stream.
+
+> **Breaking Change in v1.2:** The static `Mixer.Master` property has been **removed**. This is the most significant breaking change for users of previous versions.
+
+**Key Features:**
+
+*   **Device-Specific `MasterMixer`:** Each `AudioPlaybackDevice` now exposes its own `MasterMixer` property. This is the root mixer for that device. All audio that you wish to play on a device must ultimately be routed to its `MasterMixer`.
+*   **Creating Sub-Mixers:** You can still create your own `Mixer` instances (`new Mixer(engine, format)`) to group components before connecting them to a master mixer.
+*   **Adding and Removing Components:**
+    *   `AddComponent(SoundComponent component)`: Adds a component to the mixer's inputs.
+    *   `RemoveComponent(SoundComponent component)`: Removes a component from the mixer.
+	
+**Example:**
+
+```csharp
+using var engine = new MiniAudioEngine();
+var format = AudioFormat.DvdHq;
+using var playbackDevice = engine.InitializePlaybackDevice(null, format);
+
+// Create a SoundPlayer and an Oscillator, providing the engine and format
+using var dataProvider = new StreamDataProvider(engine, format, File.OpenRead("audio.wav"));
+var player = new SoundPlayer(engine, format, dataProvider);
+var oscillator = new Oscillator(engine, format) { Frequency = 220, Type = Oscillator.WaveformType.Square };
+
+// Add both components to the Device'S MasterMixer
+playbackDevice.MasterMixer.AddComponent(player);
+playbackDevice.MasterMixer.AddComponent(oscillator);
+
+// Start the device to enable its audio stream
+playbackDevice.Start();
+player.Play();
+oscillator.Play();
+// ...
+```
+
+## Sound Modifiers (`SoundModifier`)
+
+`SoundModifier` is an abstract base class for creating audio effects that modify the audio stream. Modifiers are applied to `SoundComponent` instances or to `AudioSegment`, `Track`, `Composition` and process the audio data.
+
+**Key Features:**
+
+*   **`ProcessSample(float sample, int channel)`:** This is the core method that derived classes can implement to process audio on a sample-by-sample basis.
+*   **`Process(Span<float> buffer, int channels)`:** This method can be overridden for buffer-based processing, which is often more efficient for complex effects. By default, it calls `ProcessSample` for each sample.
+*   **`Enabled` Property:** Allows dynamically enabling or disabling the modifier's effect.
+*   **Chaining:** Modifiers can be chained together on `SoundComponent` instances (or `AudioSegment`, `Track`, `Composition`) to create complex effect pipelines.
+
+**Built-in Modifiers:**
+
+SoundFlow provides a variety of built-in modifiers, including:
+*   Algorithmic Reverb Modifier: Simulates reverberation.
+*   Ambient Reverb Modifier: Creates a sense of spaciousness.
+*   Bass Boost Modifier: Enhances low frequencies.
+*   Chorus Modifier: Creates a chorus effect.
+*   Compressor Modifier: Reduces dynamic range.
+*   Delay Modifier: Applies a delay effect.
+*   Frequency Band Modifier: Boosts or cuts frequency bands.
+*   Noise Reduction Modifier: Reduces noise.
+*   Parametric Equalizer: Provides precise EQ control.
+*   Stereo Chorus Modifier: Creates a stereo chorus.
+*   Treble Boost Modifier: Enhances high frequencies.
+*   And potentially external modifiers like `WebRtcApmModifier` via extensions.
+
+
+**Example:**
+
+```csharp
+// Create engine, format, and device
+using var engine = new MiniAudioEngine();
+var format = AudioFormat.DvdHq;
+using var playbackDevice = engine.InitializePlaybackDevice(null, format);
+
+// Create a SoundPlayer
+using var dataProvider = new StreamDataProvider(engine, format, File.OpenRead("audio.wav"));
+var player = new SoundPlayer(engine, format, dataProvider);
+
+// Creating a modifier now requires the format context
+var reverb = new AlgorithmicReverbModifier(format) { RoomSize = 0.8f, Wet = 0.2f };
+
+// Add the reverb modifier to the player
+player.AddModifier(reverb);
+
+// Add the player to the device's MasterMixer
+playbackDevice.MasterMixer.AddComponent(player);
+// ...
+```
+
+## Sound Players (`SoundPlayerBase`, `SoundPlayer`, `SurroundPlayer`)
+
+These classes provide the logic for playing audio from a data source. Their initialization now requires the `engine` and `format` context.
+
+*   **`SoundPlayerBase`:** The abstract base class that provides common functionality for all sound playback components. It implements `ISoundPlayer` and handles:
+    *   Core playback logic: reading from an `ISoundDataProvider`, managing playback state (Play, Pause, Stop).
+    *   Playback speed adjustment via the `PlaybackSpeed` property.
+    *   Looping with `IsLooping`, `LoopStartSamples`/`Seconds`, and `LoopEndSamples`/`Seconds`.
+    *   Seeking capabilities via `Seek` methods (accepting `TimeSpan`, `float` seconds, or `int` sample offset).
+    *   Volume control (inherited from `SoundComponent`).
+    *   A `PlaybackEnded` event.
+
+*   **`SoundPlayer`:** The standard concrete implementation of `SoundPlayerBase` for typical mono or stereo audio playback.
+
+*   **`SurroundPlayer`:**
+    *   All features from `SoundPlayerBase` and `ISoundPlayer`.
+    *   `SpeakerConfiguration`: Allows you to define the speaker setup (e.g., Stereo, Quad, 5.1, 7.1, or a custom configuration).
+    *   `PanningMethod`: Selects the panning algorithm to use (Linear, EqualPower, or VBAP).
+    *   `ListenerPosition`: Sets the listener's position relative to the speakers.
+    *   `VbapParameters`: Provides fine-grained control over VBAP (Vector Base Amplitude Panning) settings.
+
+
+## Audio Recording (`Recorder`)
+
+The `Recorder` captures audio from an `AudioCaptureDevice`, directing it to a `Stream` for file storage or a `ProcessCallback` for real-time processing. It integrates `SoundModifier` and `AudioAnalyzer` components for on-the-fly audio manipulation and analysis, and implements `IDisposable` for resource management.
+
+**Key Features:**
+*   **Dual Recording Modes:** Records to an output `Stream` (e.g., file) or processes raw samples via a `ProcessCallback`.
+*   **`StartRecording()`**: Begins audio capture.
+*   **`PauseRecording()`**: Pauses recording; no data processed during this state.
+*   **`ResumeRecording()`**: Resumes a paused recording.
+*   **`StopRecording()`**: Stops recording, finalizes output, and releases resources.
+*   **`State`**: Current recording state (`Playing`, `Paused`, `Stopped`).
+*   **`SampleFormat`**: Sample format for raw audio (e.g., `Float32`), inherited from the capture device.
+*   **`EncodingFormat`**: Encoding format for stream output (e.g., `Wav`). Limited backend support.
+*   **`SampleRate`**: Audio sample rate (e.g., 44100 Hz), inherited from the capture device.
+*   **`Channels`**: Number of audio channels (e.g., 1 for mono, 2 for stereo), inherited from the capture device.
+*   **`Stream`**: Output `Stream` for encoded audio when recording to file. `Stream.Null` if using `ProcessCallback`.
+*   **`ProcessCallback`**: `AudioProcessCallback` delegate invoked with raw audio samples for real-time custom processing. `null` if using `Stream` output.
+*   **`Modifiers`**: Read-only collection of `SoundModifier` components.
+    *   **`AddModifier()`**: Adds a `SoundModifier` to the pipeline.
+    *   **`RemoveModifier()`**: Removes a `SoundModifier` from the pipeline.
+*   **`Analyzers`**: Read-only collection of `AudioAnalyzer` components.
+    *   **`AddAnalyzer()`**: Adds an `AudioAnalyzer` to the pipeline.
+    *   **`RemoveAnalyzer()`**: Removes an `AudioAnalyzer` from the pipeline.
+*   **Resource Management**: Implements `IDisposable` for proper resource cleanup.
+
+
+## Audio Providers (`ISoundDataProvider`)
+
+`ISoundDataProvider` is an interface that defines a standard way to access audio data, regardless of its source. This interface is stable, but its implementations now require an `engine` and `format` context in their constructors to correctly create internal decoders.
+
+**Key Features:**
+
+*   `Position`: The current read position within the audio data (in samples).
+*   `Length`: The total length of the audio data (in samples). Can be `-1` for live streams.
+*   `CanSeek`: Indicates whether seeking is supported.
+*   `SampleFormat`: The format of the audio samples.
+*   `SampleRate`: The sample rate of the audio.
+*   `ReadBytes(Span<float> buffer)`: Reads a chunk of audio data into the provided buffer.
+*   `Seek(int offset)`: Moves the read position to a specific offset (in samples).
+*   `EndOfStreamReached`: An event that is raised when the end of the audio data is reached.
+*   `PositionChanged`: An event that is raised when the read position changes.
+*   `Dispose()`: Implementations should release underlying resources (e.g., file streams).
+
+**Built-in Providers:**
+
+*   `AssetDataProvider`: Loads audio data from a byte array or `Stream` entirely into memory.
+*   `StreamDataProvider`: Reads audio data from a `Stream`, decoding on the fly.
+*   `MicrophoneDataProvider`: Provides a live stream from an `AudioCaptureDevice`.
+*   `ChunkedDataProvider`: Efficiently reads large files or streams in chunks.
+*   `NetworkDataProvider`: Reads audio data from a network source (URL, HLS).
+*   `QueueDataProvider`: A thread-safe queue for scenarios where one part of your application generates audio and another part consumes it.
+*   `RawDataProvider`: Reads audio data from a raw PCM stream or various raw array types (`float[]`, `byte[]`, `int[]`, `short[]`).
+
+It's good practice to dispose of `ISoundDataProvider` instances when they are no longer needed, for example, using a `using` statement.
+
+```csharp
+using var engine = new MiniAudioEngine();
+var format = AudioFormat.DvdHq;
+
+// The provider needs the engine and format to create an internal decoder.
+using var dataProvider = new StreamDataProvider(engine, format, File.OpenRead("audio.wav"));
+// Use dataProvider
+```
+
+## Audio Encoding/Decoding (`ISoundEncoder`, `ISoundDecoder`)
+
+`ISoundEncoder` and `ISoundDecoder` are interfaces for encoding and decoding audio data to and from different formats. Both are `IDisposable`.
+
+*   **`ISoundEncoder`:** Encodes raw audio samples into a specific format (e.g., WAV, FLAC, MP3). Currently only WAV supported by miniaudio backend.
+*   **`ISoundDecoder`:** Decodes audio data from a specific format into raw audio samples.
+
+**`MiniAudio` Backend:**
+
+The `MiniAudio` backend provides implementations of these interfaces using the `miniaudio` library:
+
+*   `MiniAudioEncoder`
+*   `MiniAudioDecoder`
+
+
+## Audio Analysis (`AudioAnalyzer`)
+
+`AudioAnalyzer` is an abstract base class for creating components that analyze audio data. Analyzers typically extract information from the audio stream without modifying it.
+
+**Key Features:**
+
+*   **Constructor:** Initialized with an `AudioFormat` and an optional `IVisualizer` to send data to.
+*   `Analyze(Span<float> buffer, int channels)`: An abstract method that derived classes must implement to perform their specific analysis.
+*   `Enabled`: If false, the `Analyze` step might be skipped by the `SoundComponent` it's attached to.
+*   **Integration with Visualizers:** Analyzers are often used in conjunction with `IVisualizer` implementations to display the analysis results visually.
+
+**Built-in Analyzers:**
+
+*   `LevelMeterAnalyzer`: Measures the RMS (root-mean-square) and peak levels of an audio signal.
+*   `SpectrumAnalyzer`: Computes the frequency spectrum of the audio using the Fast Fourier Transform (FFT).
+*   `VoiceActivityDetector`: Detects the presence of human voice in an audio stream.
+
+
+## Audio Visualization (`IVisualizer`)
+
+`IVisualizer` is an interface for creating components that visualize audio data. Visualizers typically don't modify the audio stream but instead render a graphical representation of the data. It implements `IDisposable`.
+
+**Key Features:**
+
+*   `Name`: A descriptive name for the visualizer.
+*   `ProcessOnAudioData(Span<float> audioData)`: This method is called by the audio engine to provide the visualizer with a chunk of audio data to process.
+*   `Render(IVisualizationContext context)`: This method is called to render the visualization. It receives an `IVisualizationContext` instance, which provides drawing methods.
+*   `VisualizationUpdated`: An event that is raised when the visualization needs to be redrawn (e.g., when new audio data has been processed).
+*   `Dispose()`: Releases resources held by the visualizer.
+
+## Visualization Context (`IVisualizationContext`):
+
+This interface provides a set of drawing methods for rendering the visualization. The specific implementation of `IVisualizationContext` will depend on the UI framework you are using.
+
+**Built-in Visualizers:**
+
+*   `LevelMeterVisualizer`: Displays a level meter that shows the current RMS or peak level of the audio.
+*   `SpectrumVisualizer`: Renders a bar graph representing the frequency spectrum of the audio.
+*   `WaveformVisualizer`: Draws the waveform of the audio signal.
+
+## Editing Engine & Persistence (`SoundFlow.Editing`, `SoundFlow.Editing.Persistence`)
+
+SoundFlow features a powerful non-destructive audio editing engine. For a detailed guide, please see the [Editing Engine & Persistence](./editing-engine) documentation.
+
+**Key Concepts:**
+
+*   **`Composition`**: The main container for an audio project, holding multiple `Track`s. It can be treated as an `ISoundDataProvider` and can be rendered or played back.
+*   **`Track`**: Represents a single audio track within a `Composition`. Contains `AudioSegment`s and has its own settings (volume, pan, mute, solo, effects).
+*   **`AudioSegment`**: A clip of audio placed on a `Track`'s timeline. It references a portion of an `ISoundDataProvider` and has its own extensive settings.
+    *   **`AudioSegmentSettings`**: Controls volume, pan, fades (with `FadeCurveType`), looping (`LoopSettings`), reverse playback, speed, and **pitch-preserved time stretching** (via `TimeStretchFactor` or `TargetStretchDuration`, powered by `WsolaTimeStretcher`).
+    *   Supports segment-level modifiers and analyzers.
+*   **Non-Destructive:** Edits do not alter the original audio source files. All operations are applied at runtime during playback or rendering.
+*   **Project Persistence (`CompositionProjectManager`)**:
+    *   Save and load entire compositions as `.sfproj` files.
+    *   **Media Consolidation**: Option to copy all external audio files into an `Assets` folder within the project.
+    *   **Embed Small Media**: Option to embed small audio files (e.g., SFX) directly into the project file.
+    *   **Relink Missing Media**: If an audio file is moved, the project can be relinked to its new location.
+
+This new engine allows for programmatic creation and manipulation of complex audio timelines, effects processing at multiple levels (segment, track, master), and robust project management.

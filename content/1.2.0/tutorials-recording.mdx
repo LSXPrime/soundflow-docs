@@ -1,0 +1,295 @@
+﻿---
+id: 8
+title: Recording Audio
+description: Comprehensive tutorials for recording audio from devices and processing it in real-time with SoundFlow.
+navOrder: 8
+category: Tutorials and Examples
+---
+import {Tab, Tabs} from "@heroui/react";
+import {Steps, Step} from '/src/components/Shared/Steps';
+
+# Audio Recording with SoundFlow
+
+Welcome to the SoundFlow audio recording tutorials! This guide will walk you through the essential steps to integrate audio recording capabilities into your .NET applications using the powerful SoundFlow C# audio library.
+
+Whether you're looking to record from the default device, perform custom real-time audio processing, or monitor microphone input, these examples have you covered.
+
+<Tabs color="secondary" variant="underlined" aria-label="Recording tutorials">
+    <Tab key="basic-recording" title="Basic Recording">
+        This tutorial demonstrates how to record audio from the default recording device and save it to a WAV
+        file.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o BasicRecording
+                cd BasicRecording
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement the basic recorder" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Structs;
+                using System;
+                using System.IO;
+                using System.Linq;
+
+                namespace BasicRecording;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        // Initialize the audio engine.
+                        using var audioEngine = new MiniAudioEngine();
+
+                        // Find the default capture (recording) device.
+                        var defaultCaptureDevice = audioEngine.CaptureDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultCaptureDevice.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("No default capture device found.");
+                            return;
+                        }
+
+                        // Define the audio format for recording. The backend will capture in this format.
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 1 // Mono recording
+                        };
+                        
+                        // Initialize the capture device.
+                        using var device = audioEngine.InitializeCaptureDevice(defaultCaptureDevice, audioFormat);
+                        
+                        // Set up the output file stream.
+                        string outputFilePath = Path.Combine(Directory.GetCurrentDirectory(), "output.wav");
+                        using var fileStream = new FileStream(outputFilePath, FileMode.Create, FileAccess.Write, FileShare.None);
+                        
+                        // Create a recorder, linking it to the capture device and the output stream.
+                        using var recorder = new Recorder(device, fileStream, EncodingFormat.Wav);
+
+                        Console.WriteLine("Recording... Press any key to stop.");
+                        device.Start(); // Start the device to begin capturing data.
+                        recorder.StartRecording(); // Start the recorder to begin encoding and writing.
+                        
+                        Console.ReadKey();
+                        
+                        recorder.StopRecording();
+                        device.Stop();
+
+                        Console.WriteLine($"Recording stopped. Saved to {outputFilePath}");
+                    }
+                }
+                ```
+            </Step>
+            <Step title="Run Application" description="Build and run the app" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+        First, an `AudioEngine` is initialized. We find the `default capture device` from the engine's list of available recording devices. An `AudioFormat` is specified for the recording session (e.g., 48kHz, mono, 32-bit float).
+        The default capture device is then initialized with this format, creating an `AudioCaptureDevice`. This `device` instance is now the source of our audio data.
+        A `Recorder` is created, taking the `device` and an output `FileStream` as arguments. The recorder listens to the audio data processed by the device.
+        To begin, `device.Start()` is called to activate the hardware, and `recorder.StartRecording()` is called to start encoding the incoming audio from the device and writing it to the specified WAV file. After the user presses a key, both the recorder and the device are stopped, and all resources are automatically disposed by their `using` statements.
+    </Tab>
+
+    <Tab key="custom-processing" title="Custom Processing">
+        This tutorial demonstrates using a callback to process recorded audio in real-time.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o CustomProcessing
+                cd CustomProcessing
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement real-time processing" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Structs;
+                using System;
+                using System.Linq;
+
+                namespace CustomProcessing;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        using var audioEngine = new MiniAudioEngine();
+                        
+                        var defaultCaptureDevice = audioEngine.CaptureDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultCaptureDevice.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("No default capture device found.");
+                            return;
+                        }
+
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 1
+                        };
+                        
+                        using var device = audioEngine.InitializeCaptureDevice(defaultCaptureDevice, audioFormat);
+                        
+                        // Create a recorder that uses a callback instead of a file stream.
+                        using var recorder = new Recorder(device, ProcessAudio);
+
+                        Console.WriteLine("Recording with custom processing... Press any key to stop.");
+                        device.Start();
+                        recorder.StartRecording();
+                        
+                        Console.ReadKey();
+                        
+                        recorder.StopRecording();
+                        device.Stop();
+                        Console.WriteLine("Recording stopped.");
+                    }
+
+                    // This method will be called for each chunk of recorded audio.
+                    private static void ProcessAudio(Span<float> samples, Capability capability)
+                    {
+                        // Perform custom processing on the audio samples.
+                        // For example, calculate the average level:
+                        float sum = 0;
+                        for (int i = 0; i < samples.Length; i++)
+                        {
+                            sum += Math.Abs(samples[i]);
+                        }
+                        float averageLevel = sum / samples.Length;
+
+                        Console.WriteLine($"Average level: {averageLevel:F4}");
+                    }
+                }
+                ```
+            </Step>
+            <Step title="Run Application" description="Build and run the app" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+        This example demonstrates how to process audio data in real-time as it's being recorded. After the standard setup of initializing the `AudioEngine` and the default `AudioCaptureDevice`, a `Recorder` is created.
+        Instead of providing a file stream, this `Recorder` is given a callback method, `ProcessAudio`. The `Recorder` subscribes to the `device`'s `OnAudioProcessed` event. When the recorder is started, it will invoke our `ProcessAudio` method every time the device provides a new chunk of audio data.
+        The `ProcessAudio` method receives a `Span<float>` containing the latest audio samples, allowing for immediate analysis or processing, such as calculating the average level shown in this example. This approach is ideal for applications that need to react to live audio input without writing to a file, like voice activity detection, real-time visualizations, or triggering events based on sound.
+    </Tab>
+
+    <Tab key="mic-playback" title="Mic Playback (Monitor)">
+        This tutorial demonstrates capturing microphone audio and playing it back in real-time.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o MicrophonePlayback
+                cd MicrophonePlayback
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement microphone loopback" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Providers;
+                using SoundFlow.Structs;
+                using System;
+                using System.Linq;
+
+                namespace MicrophonePlayback;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        // Initialize the audio engine.
+                        using var audioEngine = new MiniAudioEngine();
+
+                        // Find the default playback and capture devices.
+                        var defaultPlayback = audioEngine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+                        var defaultCapture = audioEngine.CaptureDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultPlayback.Id == IntPtr.Zero || defaultCapture.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("Default playback and/or capture device not found.");
+                            return;
+                        }
+                        
+                        // Define a common audio format for both input and output.
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 2 // Stereo for playback
+                        };
+
+                        // Use FullDuplexDevice for simplified simultaneous input and output.
+                        using var fullDuplexDevice = audioEngine.InitializeFullDuplexDevice(defaultPlayback, defaultCapture, audioFormat);
+                        
+                        // Create a data provider that reads from the microphone.
+                        // It subscribes to the capture device's audio events.
+                        using var microphoneDataProvider = new MicrophoneDataProvider(fullDuplexDevice.CaptureDevice);
+                        
+                        // Create a SoundPlayer to play back the microphone data.
+                        using var player = new SoundPlayer(audioEngine, audioFormat, microphoneDataProvider);
+
+                        // Add the player to the playback device's master mixer.
+                        fullDuplexDevice.PlaybackDevice.MasterMixer.AddComponent(player);
+
+                        // Start capturing and playing.
+                        fullDuplexDevice.Start();
+                        microphoneDataProvider.StartCapture();
+                        player.Play();
+
+                        Console.WriteLine("Playing live microphone audio... Press any key to stop.");
+                        Console.ReadKey();
+
+                        // Stop everything.
+                        fullDuplexDevice.Stop();
+                    }
+                }
+                ```
+            </Step>
+            <Step title="Run Application" description="Build and run the app" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+        This example creates a real-time microphone monitoring system. The key component is the `FullDuplexDevice`, a high-level abstraction that simplifies managing simultaneous input and output.
+        After initializing the `AudioEngine`, we find the default playback and capture devices and define a common `AudioFormat`. `audioEngine.InitializeFullDuplexDevice` is then called to create and manage a paired `AudioCaptureDevice` and `AudioPlaybackDevice`.
+        A `MicrophoneDataProvider` is created and linked to the capture part of the full duplex device (`fullDuplexDevice.CaptureDevice`). This provider listens for incoming audio data.
+        A `SoundPlayer` is instantiated with the `MicrophoneDataProvider` as its source. This player is then added to the `MasterMixer` of the playback part of the full duplex device (`fullDuplexDevice.PlaybackDevice.MasterMixer`).
+        Starting the `fullDuplexDevice` activates both the capture and playback hardware streams. `microphoneDataProvider.StartCapture()` begins queuing the incoming audio, and `player.Play()` starts reading from that queue and sending the audio to the output, creating a live monitoring effect. All resources are managed with `using` statements for automatic cleanup.
+    </Tab>
+</Tabs>
+
+We hope these tutorials have provided a solid foundation for recording audio with SoundFlow!
+Next, explore using audio effects with SoundFlow in our [Modifiers Tutorial](./tutorials-modifiers).

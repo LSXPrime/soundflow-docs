@@ -1,0 +1,546 @@
+---
+id: 4
+title: Editing Engine & Persistence
+description: Dive deep into SoundFlow's non-destructive audio editing engine, project management, time stretching, and media handling capabilities.
+navOrder: 4
+category: Core
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs} from "@heroui/react";
+import { Steps, Step } from '/src/components/Shared/Steps';
+import { Card, CardHeader, CardBody } from "@heroui/react";
+
+
+# SoundFlow Editing Engine & Persistence
+
+SoundFlow features a comprehensive, non-destructive audio editing engine and a robust project persistence system. This allows developers to programmatically build, manipulate, and save complex audio timelines, complete with effects, advanced timing controls, and media management.
+
+## Core Editing Concepts
+
+The editing engine revolves around a few key classes:
+
+<Steps layout='vertical'>
+    <Step title="Composition" description="The top-level project container" icon='ph:stack-bold'>
+        ### `Composition` (`SoundFlow.Editing.Composition`)
+
+        The `Composition` is the top-level container for an audio project. Think of it as the main "session" or "project file" in a Digital Audio Workstation (DAW).
+
+        *   **Holds Tracks:** A `Composition` contains one or more `Track` objects.
+        *   **Master Settings:** It has master volume control (`MasterVolume`) and can have master effects (modifiers and analyzers) applied to the final mix.
+        *   **Renderable:** A `Composition` itself implements `ISoundDataProvider`, meaning the entire composed project can be played back directly using a `SoundPlayer` or rendered to an audio file.
+        *   **Project Properties:** Stores overall project settings like `Name`, `TargetSampleRate`, and `TargetChannels`.
+        *   **Dirty Flag:** Tracks unsaved changes via an `IsDirty` property.
+        *   **IDisposable:** Manages the disposal of resources within its scope.
+
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Abstracts.Devices;
+        using SoundFlow.Backends.MiniAudio;
+        using SoundFlow.Components;
+        using SoundFlow.Editing;
+        using SoundFlow.Enums;
+        using SoundFlow.Interfaces;
+        using SoundFlow.Providers;
+        using SoundFlow.Structs;
+
+        // Define the format for the composition
+        var compositionFormat = new AudioFormat
+        {
+            SampleRate = 48000,
+            Channels = 2,
+            Format = SampleFormat.F32
+        };
+
+        // Create a new composition with the specified format
+        var composition = new Composition(compositionFormat, "My Awesome Project")
+        {
+            MasterVolume = 0.9f
+        };
+
+        // Add master effects (optional)
+        // composition.AddModifier(new SomeMasterReverb(compositionFormat));
+
+        // ... (add tracks and segments) ...
+
+        // To play the composition:
+        // 1. Create an engine context
+        using var engine = new MiniAudioEngine();
+
+        // 2. Initialize a playback device using the composition's format
+        using var playbackDevice = engine.InitializePlaybackDevice(null, composition.Format);
+
+        // 3. Create a player for the composition. The composition itself is the data provider.
+        var player = new SoundPlayer(engine, composition.Format, composition);
+
+        // 4. Add the player to the device's MasterMixer
+        playbackDevice.MasterMixer.AddComponent(player);
+
+        // 5. Start the device and the player
+        playbackDevice.Start();
+        player.Play();
+
+        // To render the composition to a float array:
+        // float[] renderedAudio = composition.Render(TimeSpan.Zero, composition.CalculateTotalDuration());
+        ```
+    </Step>
+    <Step title="Track" description="A single audio timeline" icon='lucide:audio-lines'>
+        ### `Track` (`SoundFlow.Editing.Track`)
+
+        A `Track` represents a single audio track within a `Composition`, similar to a track in a DAW.
+
+        *   **Holds Segments:** A `Track` contains a list of `AudioSegment` objects, which are the actual audio clips placed on the track's timeline.
+        *   **Track-Level Settings (`TrackSettings`):** Each track has its own settings:
+            *   `Volume`, `Pan`
+            *   `IsMuted`, `IsSoloed`, `IsEnabled`
+            *   Track-specific `Modifiers` and `Analyzers`.
+        *   **Timeline Management:** Tracks manage the arrangement of their segments.
+
+        ```csharp
+        using SoundFlow.Editing;
+
+        // Assuming 'composition' from previous example
+        var track1 = new Track("Lead Vocals");
+        track1.Settings.Volume = 0.8f;
+        track1.Settings.Pan = -0.1f; // Slightly to the left
+
+        var track2 = new Track("Background Music");
+        track2.Settings.Volume = 0.5f;
+        track2.Settings.IsMuted = true; // Mute this track for now
+
+        composition.AddTrack(track1);
+        composition.AddTrack(track2);
+        ```
+    </Step>
+    <Step title="AudioSegment" description="The fundamental audio clip" icon='mdi:content-cut'>
+        ### `AudioSegment` (`SoundFlow.Editing.AudioSegment`)
+
+        The `AudioSegment` is the fundamental building block for audio content on a `Track`. It represents a specific portion of an audio source placed at a particular time on the track's timeline.
+
+        *   **Source Reference:** Points to an `ISoundDataProvider` for its audio data.
+        *   **Timeline Placement:**
+            *   `SourceStartTime`: The time offset within the `ISoundDataProvider` from which this segment begins.
+            *   `SourceDuration`: The duration of audio to use from the `ISoundDataProvider`.
+            *   `TimelineStartTime`: The time at which this segment starts on the parent `Track`'s timeline.
+        *   **Segment-Level Settings (`AudioSegmentSettings`):** Each segment has incredibly granular control:
+            *   `Volume`, `Pan`
+            *   `IsEnabled`
+            *   `IsReversed`: Play the segment's audio backward.
+            *   `Loop` (`LoopSettings`): Control repetitions or loop to fill a target duration.
+            *   `FadeInDuration`, `FadeInCurve`, `FadeOutDuration`, `FadeOutCurve`: Apply various fade shapes (`Linear`, `Logarithmic`, `S-Curve`).
+            *   `SpeedFactor`: Classic varispeed, affects pitch and tempo.
+        *   **Pitch-Preserved Time Stretching:**
+            *   `TimeStretchFactor`: Lengthen or shorten the segment without changing pitch (e.g., 0.5 for half duration, 2.0 for double duration).
+            *   `TargetStretchDuration`: Stretch the segment to fit a specific duration, preserving pitch.
+        *   Segment-specific `Modifiers` and `Analyzers`.
+        *   **Non-Destructive:** All operations (trimming, fades, stretching) are applied at runtime and do not alter the original audio source.
+        *   **IDisposable:** Can own and dispose its `ISoundDataProvider` if specified.
+
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Editing;
+        using SoundFlow.Providers;
+        using SoundFlow.Structs;
+        using System.IO;
+
+        // Assuming 'engine', 'track1' and 'compositionFormat' from previous examples
+        // And an audio file "vocals.wav" exists.
+        using var vocalProvider = new StreamDataProvider(engine, compositionFormat, File.OpenRead("vocals.wav"));
+
+        // Create a segment: use 10 seconds of "vocals.wav" starting from 5s into the file,
+        // and place it at 2 seconds on track1's timeline.
+        var vocalSegment = new AudioSegment(
+            format: compositionFormat,
+            sourceDataProvider: vocalProvider,
+            sourceStartTime: TimeSpan.FromSeconds(5),
+            sourceDuration: TimeSpan.FromSeconds(10),
+            timelineStartTime: TimeSpan.FromSeconds(2),
+            name: "Verse 1 Vocals",
+            ownsDataProvider: false // vocalProvider is managed by 'using' here
+        );
+
+        // Apply settings
+        vocalSegment.Settings.Volume = 0.95f;
+        vocalSegment.Settings.FadeInDuration = TimeSpan.FromMilliseconds(200);
+        vocalSegment.Settings.FadeInCurve = FadeCurveType.SCurve;
+        vocalSegment.Settings.TimeStretchFactor = 1.1f; // Make it 10% longer without pitch change
+
+        track1.AddSegment(vocalSegment);
+        ```
+    </Step>
+</Steps>
+
+### Duration Calculations
+
+*   `AudioSegment.StretchedSourceDuration`: The duration of the segment's content *after* pitch-preserved time stretching is applied (but before `SpeedFactor`).
+*   `AudioSegment.EffectiveDurationOnTimeline`: The duration a single instance of the segment takes on the timeline, considering both `StretchedSourceDuration` and `SpeedFactor`.
+*   `AudioSegment.GetTotalLoopedDurationOnTimeline()`: The total duration the segment occupies on the timeline, including all loops.
+*   `AudioSegment.TimelineEndTime`: `TimelineStartTime + GetTotalLoopedDurationOnTimeline()`.
+*   `Track.CalculateDuration()`: The time of the latest `TimelineEndTime` among all its segments.
+*   `Composition.CalculateTotalDuration()`: The time of the latest `TimelineEndTime` among all its tracks.
+
+## Time Manipulation
+
+SoundFlow's editing engine offers sophisticated time manipulation capabilities for `AudioSegment`s:
+
+<Tabs color="primary" variant="bordered" aria-label="Time manipulation options" className="mt-4">
+    <Tab
+        key="time-stretch"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='material-symbols:timelapse-outline' />
+                <span>Pitch-Preserved Time Stretching</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                This feature allows you to change the duration of an audio segment without affecting its pitch. It's ideal for:
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>Fitting dialogue or music to a specific time slot.</li>
+                    <li>Creative sound design by drastically stretching or compressing audio.</li>
+                </ul>
+
+                It's controlled by two properties in `AudioSegmentSettings`:
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>
+                        <strong><code>TimeStretchFactor</code> (float):</strong>
+                        <ul className="list-disc pl-5 mt-1">
+                            <li><code>1.0</code>: No stretching.</li>
+                            <li><code>&gt; 1.0</code>: Makes the segment longer (e.g., <code>2.0</code> doubles the duration).</li>
+                            <li><code>&lt; 1.0</code> and <code>&gt; 0.0</code>: Makes the segment shorter (e.g., <code>0.5</code> halves the duration).</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong><code>TargetStretchDuration</code> (TimeSpan?):</strong>
+                        <ul className="list-disc pl-5 mt-1">
+                            <li>If set, this overrides `TimeStretchFactor`. The segment will be stretched or compressed to match this exact duration.</li>
+                            <li>Set to `null` to use `TimeStretchFactor` instead.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p className="mt-2">Internally, SoundFlow uses a high-quality <strong>WSOLA (Waveform Similarity Overlap-Add)</strong> algorithm implemented in the <code>WsolaTimeStretcher</code> class.</p>
+                ```csharp
+                // Make a segment 50% shorter while preserving pitch
+                mySegment.Settings.TimeStretchFactor = 0.5f;
+
+                // Make a segment exactly 3.75 seconds long, preserving pitch
+                mySegment.Settings.TargetStretchDuration = TimeSpan.FromSeconds(3.75);
+                ```
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="varispeed"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='mdi:speedometer' />
+                <span>Classic Speed Control (Varispeed)</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                The <code>SpeedFactor</code> property in `AudioSegmentSettings` provides traditional speed control, affecting both the tempo and the pitch of the audio, similar to changing the playback speed of a tape machine.
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>
+                        <strong><code>SpeedFactor</code> (float):</strong>
+                        <ul className="list-disc pl-5 mt-1">
+                            <li><code>1.0</code>: Normal speed and pitch.</li>
+                            <li><code>&gt; 1.0</code>: Faster playback, higher pitch.</li>
+                            <li><code>&lt; 1.0</code> and <code>&gt; 0.0</code>: Slower playback, lower pitch.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p className="mt-2"><strong>Interaction:</strong> Time stretching is applied to the source audio <em>first</em>, and then the <code>SpeedFactor</code> is applied to the time-stretched result.</p>
+                ```csharp
+                // Play segment at double speed (and an octave higher)
+                mySegment.Settings.SpeedFactor = 2.0f;
+
+                // Play segment at half speed (and an octave lower)
+                mySegment.Settings.SpeedFactor = 0.5f;
+                ```
+            </CardBody>
+        </Card>
+    </Tab>
+</Tabs>
+
+## Project Persistence (`SoundFlow.Editing.Persistence`)
+
+The `CompositionProjectManager` class provides static methods for saving and loading your `Composition` objects. Projects are saved in a JSON-based format with the `.sfproj` extension.
+
+<Tabs color="primary" variant="bordered" aria-label="Project persistence options" className="mt-4">
+    <Tab
+        key="save"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='material-symbols:save-outline' />
+                <span>Saving a Project</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                ### Saving a Project
+
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Editing;
+                using SoundFlow.Editing.Persistence;
+                using System.Threading.Tasks;
+
+                public async Task SaveMyProject(AudioEngine engine, Composition composition, string filePath)
+                {
+                    await CompositionProjectManager.SaveProjectAsync(
+                        engine,                 // The engine is now required for consolidation
+                        composition,
+                        filePath,
+                        consolidateMedia: true,  // Recommended for portability
+                        embedSmallMedia: true   // Embeds small audio files directly
+                    );
+                    Console.WriteLine($"Project saved to {filePath}");
+                }
+                ```
+
+                **Saving Options:**
+                <ul className="list-disc pl-5 mt-2 space-y-2">
+                    <li>
+                        <strong><code>consolidateMedia</code> (bool):</strong> If <code>true</code> (default), SoundFlow will attempt to copy all unique external audio files referenced by segments into an <code>Assets</code> subfolder next to your <code>.sfproj</code> file. This makes the project self-contained and portable. In-memory <code>ISoundDataProvider</code>s (like <code>RawDataProvider</code> from generated audio) will also be saved as WAV files in the <code>Assets</code> folder if <code>consolidateMedia</code> is true. The project file will then store relative paths to these consolidated assets.
+                    </li>
+                    <li>
+                        <strong><code>embedSmallMedia</code> (bool):</strong> If <code>true</code> (default), audio sources smaller than a certain threshold (currently 1MB) will be embedded directly into the <code>.sfproj</code> file as Base64-encoded strings. This is useful for short sound effects or jingles, avoiding the need for separate files. Embedding takes precedence over consolidation for small files.
+                    </li>
+                </ul>
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="load"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='material-symbols:folder-open-outline' />
+                <span>Loading a Project</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                ### Loading a Project
+
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Editing;
+                using SoundFlow.Editing.Persistence;
+                using SoundFlow.Structs;
+                using System.Threading.Tasks;
+                using System.Linq;
+                using System.Collections.Generic; 
+
+                public async Task<(Composition?, List<ProjectSourceReference>)> LoadMyProject(AudioEngine engine, string filePath)
+                {
+                    if (!File.Exists(filePath))
+                    {
+                        Console.WriteLine($"Project file not found: {filePath}");
+                        return (null, new List<ProjectSourceReference>());
+                    }
+
+                    // NOTE: The loaded composition will have its own format. For playback, you'll
+                    // need to initialize a device with that specific format. Here we'll just
+                    // use a default format for the load operation itself.
+                    var loadingFormat = AudioFormat.DvdHq;
+
+                    var (loadedComposition, unresolvedSources) = await CompositionProjectManager.LoadProjectAsync(engine, loadingFormat, filePath);
+
+                    if (unresolvedSources.Any())
+                    {
+                        Console.WriteLine("Warning: Some media sources could not be found:");
+                        foreach (var missing in unresolvedSources)
+                        {
+                            Console.WriteLine($" - Missing ID: {missing.Id}, Original Path: {missing.OriginalAbsolutePath ?? "N/A"}");
+                            // Here you could trigger a UI for relinking
+                        }
+                    }
+
+                    Console.WriteLine($"Project '{loadedComposition.Name}' loaded successfully!");
+                    return (loadedComposition, unresolvedSources);
+                }
+                ```
+
+                When loading, `LoadProjectAsync` returns a tuple:
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>The loaded <code>Composition</code> object.</li>
+                    <li>A <code>List&lt;ProjectSourceReference&gt;</code> detailing any audio sources that could not be found (based on embedded data, consolidated paths, or original absolute paths).</li>
+                </ul>
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="relink"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='ph:link-bold' />
+                <span>Media Management & Relinking</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                ### Media Management & Relinking
+
+                SoundFlow's persistence system attempts to locate media in this order:
+                1.  **Embedded Data:** If the `ProjectSourceReference` indicates embedded data, it's decoded.
+                2.  **Consolidated Relative Path:** If not embedded, it looks for the file in the `Assets` folder relative to the project file.
+                3.  **Original Absolute Path:** If still not found, it tries the original absolute path stored during the save.
+
+                If a source is still missing, it's added to the `unresolvedSources` list. You can then use `CompositionProjectManager.RelinkMissingMediaAsync` to update the project with the new location of a missing file:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Editing;
+                using SoundFlow.Editing.Persistence;
+                using SoundFlow.Structs;
+                using System.Threading.Tasks;
+
+                public async Task AttemptRelink(AudioEngine engine, AudioFormat format, ProjectSourceReference missingSource, string newFilePath, string projectDirectory)
+                {
+                    bool success = CompositionProjectManager.RelinkMissingMediaAsync(
+                        engine,
+                        format,
+                        missingSource,
+                        newFilePath,
+                        projectDirectory
+                    );
+
+                    if (success)
+                    {
+                        Console.WriteLine($"Successfully relinked '{missingSource.Id}' to '{newFilePath}'.");
+                        // You might need to re-resolve or update segments in your loaded composition
+                        // that use this missingSourceReference. One way is to reload the project:
+                        // (var reloadedComposition, var newMissing) = await CompositionProjectManager.LoadProjectAsync(engine, format, projectFilePath);
+                        // Or, manually update ISoundDataProvider instances in affected AudioSegments.
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Failed to relink '{missingSource.Id}'. File at new path might be invalid or inaccessible.");
+                    }
+                }
+                ```
+            </CardBody>
+        </Card>
+    </Tab>
+</Tabs>
+
+<Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20 mt-6">
+    <CardHeader>
+        <div className="flex items-center gap-3">
+            <Icon icon="lucide:lightbulb" className="text-primary text-2xl flex-shrink-0" />
+            <h4 className="font-semibold text-lg">Note on <code>ownsDataProvider</code></h4>
+        </div>
+    </CardHeader>
+    <CardBody className="pt-0">
+        <ul className="list-disc pl-5 space-y-2 text-sm">
+            <li>
+                When you create <code>AudioSegment</code>s manually for a new composition, you manage the lifecycle of their <code>ISoundDataProvider</code>s. If you pass <code>ownsDataProvider: true</code>, the segment will dispose of the provider when the segment itself (or its parent <code>Composition</code>) is disposed.
+            </li>
+            <li>
+                When a <code>Composition</code> is loaded from a project file, the <code>AudioSegment</code>s created during loading will typically have <code>ownsDataProvider: true</code> set for the <code>ISoundDataProvider</code>s that were resolved (from file, embedded, or consolidated assets), as the loading process instantiates these providers.
+            </li>
+        </ul>
+    </CardBody>
+</Card>
+
+## Dirty Flag (`IsDirty`)
+
+`Composition`, `Track`, and `AudioSegment` (via its `Settings`) have an `IsDirty` property.
+*   This flag is automatically set to `true` when any significant property that affects playback or persistence is changed.
+*   `CompositionProjectManager.SaveProjectAsync` calls `composition.ClearDirtyFlag()` internally upon successful save.
+*   You can use this flag to prompt users to save changes before closing an application, for example.
+
+## Basic Composition Example
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Enums;
+using SoundFlow.Providers;
+using SoundFlow.Editing; // New namespace
+using System;
+using System.IO;
+using System.Threading.Tasks;
+
+namespace BasicComposition;
+
+internal static class Program
+{
+    private static async Task Main(string[] args)
+    {
+        // Initialize the audio engine.
+        // It's good practice to set format and channels to match your composition's target.
+        using var audioEngine = new MiniAudioEngine(48000, Capability.Playback, channels: 1);
+
+        // Create a composition
+        var composition = new Composition("My First Song") { SampleRate = 48000, TargetChannels = 1 };
+
+        // Create a track
+        var track1 = new Track("Vocals");
+        composition.AddTrack(track1);
+
+        // Load an audio file for a segment
+        // IMPORTANT: Replace with an actual path to a WAV file on your system
+        string audioPath = "path/to/your/audio.wav";
+        if (!File.Exists(audioPath))
+        {
+            Console.WriteLine($"Audio file not found: {audioPath}");
+            Console.WriteLine("Please update 'audioPath' in the example code to a valid WAV file on your system.");
+            return;
+        }
+
+        // Create a StreamDataProvider from the audio file.
+        // The compositionFormat (or a compatible format) is needed for the provider.
+        var provider = new StreamDataProvider(audioEngine, composition.Format, File.OpenRead(audioPath));
+
+        // Create an audio segment
+        // Play from 0s of source, for 5s duration, place at 1s on timeline
+        var segment1 = new AudioSegment(
+            format: composition.Format, // Use the composition's format for the segment
+            sourceDataProvider: provider,
+            sourceStartTime: TimeSpan.Zero,
+            sourceDuration: TimeSpan.FromSeconds(5),
+            timelineStartTime: TimeSpan.FromSeconds(1),
+            name: "Intro Vocal Clip",
+            ownsDataProvider: true // The segment will dispose of the provider when the segment/composition is disposed
+        );
+
+        // Optionally, modify segment settings
+        segment1.Settings.Volume = 0.9f;
+        segment1.Settings.FadeInDuration = TimeSpan.FromMilliseconds(500);
+
+        track1.AddSegment(segment1);
+
+        // Create a SoundPlayer for the composition
+        // The composition itself acts as an ISoundDataProvider
+        var compositionPlayer = new SoundPlayer(audioEngine, composition.Format, composition);
+        audioEngine.MasterMixer.AddComponent(compositionPlayer); // Add player to the engine's master mixer
+        compositionPlayer.Play();
+
+        Console.WriteLine($"Playing composition '{composition.Name}' for {composition.CalculateTotalDuration().TotalSeconds:F1}s... Press any key to stop.");
+        Console.ReadKey();
+
+        compositionPlayer.Stop();
+        audioEngine.MasterMixer.RemoveComponent(compositionPlayer);
+
+        // Dispose the composition and engine to release resources
+        composition.Dispose();
+    }
+}
+```
+
+## Examples in Action
+
+The `SoundFlow.Samples.EditingMixer` project in the SoundFlow GitHub repository provides extensive, runnable examples demonstrating:
+*   Building compositions with dialogue and generated audio.
+*   Using various `AudioSegmentSettings` like fades, loops, reverse, speed, and time stretching.
+*   Saving projects with different media handling strategies (consolidation, embedding).
+*   Loading projects and handling missing media by relinking.
+
+Exploring this sample project is highly recommended to see these concepts applied in practical scenarios.

@@ -1,0 +1,389 @@
+---
+id: 3
+title: Device Management
+description: Learn how to manage audio devices in SoundFlow, including initialization, switching, and advanced configuration.
+navOrder: 3
+category: Core
+---
+
+import { Card, CardBody, Tabs, Tab, Chip } from "@heroui/react";
+import { Icon } from "@iconify/react";
+
+# Device Management
+
+SoundFlow v1.2 introduced a powerful, device-centric architecture. This guide covers how to discover, initialize, and manage audio devices for playback, capture, and more complex scenarios.
+
+## An Overview
+
+The most significant change in v1.2 is the separation of the **`AudioEngine`** from the **`AudioDevice`**.
+
+*   **`AudioEngine`**: Acts as a central **context** or **factory**. It is responsible for interacting with the low-level audio backend (e.g., MiniAudio), discovering available hardware, and creating device instances.
+*   **`AudioDevice`**: Represents an active audio I/O stream to a specific piece of hardware. Each device has its own lifecycle (`Start`, `Stop`, `Dispose`), its own audio format (`AudioFormat`), and, in the case of playback devices, its own independent audio graph (`MasterMixer`).
+
+This model allows for robust, multi-device applications where you can, for example, play audio to a speaker and a headphone jack simultaneously, each with different effects.
+
+## Listing Available Devices
+
+Before initializing a device, you need to know what hardware is available. The `AudioEngine` provides this information.
+
+<Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20 mt-4">
+    <CardBody>
+        <div className="flex items-center gap-3">
+            <Icon icon="lucide:info" className="text-primary text-2xl flex-shrink-0" />
+            <p className="text-sm">
+                You must call `engine.UpdateDevicesInfo()` before accessing the device lists to ensure they are up-to-date.
+            </p>
+        </div>
+    </CardBody>
+</Card>
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+
+// 1. Initialize the engine context.
+using var engine = new MiniAudioEngine();
+
+// 2. Refresh the list of available devices.
+engine.UpdateDevicesInfo();
+
+// 3. List available playback devices.
+Console.WriteLine("--- Playback Devices ---");
+if (engine.PlaybackDevices.Length == 0)
+{
+    Console.WriteLine("No playback devices found.");
+}
+else
+{
+    foreach (var device in engine.PlaybackDevices)
+    {
+        Console.WriteLine($"- {device.Name} {(device.IsDefault ? "(Default)" : "")}");
+    }
+}
+
+
+// 4. List available capture devices.
+Console.WriteLine("\n--- Capture Devices ---");
+if (engine.CaptureDevices.Length == 0)
+{
+    Console.WriteLine("No capture devices found.");
+}
+else
+{
+    foreach (var device in engine.CaptureDevices)
+    {
+        Console.WriteLine($"- {device.Name} {(device.IsDefault ? "(Default)" : "")}");
+    }
+}
+```
+
+## Initializing an Audio Device
+
+Once you have a `DeviceInfo` struct (or if you want to use the default device), you can ask the engine to initialize it.
+
+<Tabs color="primary" variant="bordered" aria-label="Device initialization options" className="mt-4">
+    <Tab
+        key="playback"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='lucide:audio-lines' />
+                <span>Playback Device</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                An `AudioPlaybackDevice` is used for sending audio out to speakers or headphones.
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>It has its own `MasterMixer`, which is the root of its audio graph.</li>
+                    <li>It must be started with `Start()` to begin processing audio.</li>
+                </ul>
+                    ```csharp
+                    using SoundFlow.Abstracts;
+                    using SoundFlow.Abstracts.Devices;
+                    using SoundFlow.Backends.MiniAudio;
+                    using SoundFlow.Components;
+                    using SoundFlow.Structs;
+
+                    using var engine = new MiniAudioEngine();
+
+                    // Define the audio format for this device.
+                    var format = AudioFormat.DvdHq; // 48kHz, 2-channel, 32-bit float
+
+                    // To use the default device, pass `null` or `engine.PlaybackDevices.FirstOrDefault(d => d.IsDefault)`
+                    using var playbackDevice = engine.InitializePlaybackDevice(null, format);
+                    Console.WriteLine($"Initialized playback on: {playbackDevice.Info?.Name}");
+
+                    // Create an oscillator component with the same format.
+                    var oscillator = new Oscillator(engine, format) { Frequency = 440f, Volume = 0.5f };
+
+                    // Add the oscillator to the device's MasterMixer.
+                    playbackDevice.MasterMixer.AddComponent(oscillator);
+
+                    // Start the device's audio stream.
+                    playbackDevice.Start();
+
+                    Console.WriteLine("Playing a 440 Hz tone. Press any key to stop.");
+                    Console.ReadKey();
+
+                    // Stop the device.
+                    playbackDevice.Stop();
+                    ```
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="capture"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='lucide:mic' />
+                <span>Capture Device</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                An `AudioCaptureDevice` is used for receiving audio from a microphone or other input.
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>Its primary interaction point is the `OnAudioProcessed` event.</li>
+                    <li>It must be started with `Start()` to begin capturing audio.</li>
+                </ul>
+                    ```csharp
+                    using SoundFlow.Abstracts;
+                    using SoundFlow.Abstracts.Devices;
+                    using SoundFlow.Backends.MiniAudio;
+                    using SoundFlow.Enums;
+                    using SoundFlow.Structs;
+
+                    using var engine = new MiniAudioEngine();
+                    var format = new AudioFormat { SampleRate = 48000, Channels = 1, Format = SampleFormat.F32 };
+
+                    // To use the default device, pass `null` or `engine.CaptureDevices.FirstOrDefault(d => d.IsDefault)`
+                    using var captureDevice = engine.InitializeCaptureDevice(null, format);
+                    Console.WriteLine($"Initialized capture on: {captureDevice.Info?.Name}");
+
+                    // Subscribe to the audio data event.
+                    captureDevice.OnAudioProcessed += (samples, capability) =>
+                    {
+                        // This code block will execute on the audio thread every time a buffer is ready.
+                        // Be efficient here to avoid audio dropouts.
+                        Console.Write("."); // Print a dot to show that data is flowing.
+                    };
+
+                    // Start capturing.
+                    captureDevice.Start();
+
+                    Console.WriteLine("Capturing audio... Press any key to stop.");
+                    Console.ReadKey();
+
+                    // Stop capturing.
+                    captureDevice.Stop();
+                    ```
+            </CardBody>
+        </Card>
+    </Tab>
+</Tabs>
+
+## High-Level Device Wrappers
+
+SoundFlow provides convenience wrappers for common and complex scenarios.
+
+<Tabs color="primary" variant="bordered" aria-label="Device wrapper options" className="mt-4">
+    <Tab
+        key="fullduplex"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='carbon:arrows-horizontal' />
+                <span>Full-Duplex (Simultaneous I/O)</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                The `FullDuplexDevice` simplifies scenarios like live effects processing or VoIP by managing a paired playback and capture device.
+                    ```csharp
+                    using SoundFlow.Abstracts;
+                    using SoundFlow.Backends.MiniAudio;
+                    using SoundFlow.Components;
+                    using SoundFlow.Providers;
+                    using SoundFlow.Structs;
+
+                    using var engine = new MiniAudioEngine();
+                    var format = AudioFormat.DvdHq;
+
+                    // Getting the default devices
+                    var playbackDevice = engine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+                    var captureDevice = engine.CaptureDevices.FirstOrDefault(d => d.IsDefault);
+
+                    // Initialize a duplex device using the selected playback and capture hardware, or null for default.
+                    using var duplexDevice = engine.InitializeFullDuplexDevice(playbackDevice, captureDevice, format);
+
+                    Console.WriteLine($"Passthrough active. Input: {duplexDevice.CaptureDevice.Info?.Name}, Output: {duplexDevice.PlaybackDevice.Info?.Name}");
+
+                    // Create a provider that reads from the capture device's audio stream.
+                    using var micProvider = new MicrophoneDataProvider(duplexDevice); // MicrophoneDataProvider works with both Capture and Duplex devices
+
+                    // Create a player that plays the audio from the microphone provider.
+                    using var player = new SoundPlayer(engine, format, micProvider);
+
+                    // Add the player to the duplex device's playback mixer.
+                    duplexDevice.MasterMixer.AddComponent(player);
+
+                    // Start the duplex device, provider, and player.
+                    duplexDevice.Start();
+                    micProvider.StartCapture();
+                    player.Play();
+
+                    Console.WriteLine("Live microphone passthrough is active. Press any key to stop.");
+                    Console.ReadKey();
+
+                    // Clean up
+                    duplexDevice.Stop();
+                    ```
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="loopback"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='mdi:record-rec' />
+                <span>Loopback Recording</span>
+                <Chip color="warning" variant="flat" size="sm">Windows Only</Chip>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                Loopback allows you to capture the audio that your computer is currently playing. This is useful for recording game audio, system sounds, or audio from other applications.
+                <Card className="bg-warning-50/50 dark:bg-warning-500/10 border-1 border-warning-200/50 dark:border-warning-500/20 my-4">
+                    <CardBody>
+                        <div className="flex items-center gap-3">
+                            <Icon icon="lucide:alert-triangle" className="text-warning text-2xl flex-shrink-0" />
+                            <p className="text-sm">
+                                Loopback recording is currently only supported on <strong>Windows</strong> via the WASAPI backend.
+                            </p>
+                        </div>
+                    </CardBody>
+                </Card>
+                    ```csharp
+                    using SoundFlow.Abstracts;
+                    using SoundFlow.Backends.MiniAudio;
+                    using SoundFlow.Components;
+                    using SoundFlow.Structs;
+
+                    using var engine = new MiniAudioEngine();
+                    var format = AudioFormat.DvdHq;
+
+                    // Initialize a loopback device. It internally finds the default playback
+                    // device and sets it up for capture.
+                    using var loopbackDevice = engine.InitializeLoopbackDevice(format);
+                    Console.WriteLine($"Initialized loopback capture on: {loopbackDevice.Info?.Name}");
+
+                    // Record the loopback audio to a file.
+                    using var fileStream = new FileStream("system_audio.wav", FileMode.Create);
+                    using var recorder = new Recorder(loopbackDevice, fileStream);
+
+                    // Start capture and recording.
+                    loopbackDevice.Start();
+                    recorder.StartRecording();
+
+                    Console.WriteLine("Recording system audio... Play some sound! Press any key to stop.");
+                    Console.ReadKey();
+
+                    // Stop and clean up.
+                    recorder.StopRecording();
+                    loopbackDevice.Stop();
+
+                    Console.WriteLine("Recording stopped. Saved to system_audio.wav");
+                    ```
+            </CardBody>
+        </Card>
+    </Tab>
+</Tabs>
+
+## Runtime Device Switching
+
+A powerful feature of SoundFlow is the ability to switch the underlying hardware device at runtime without interrupting the audio graph. The `Engine.SwitchDevice(...)` method handles this seamlessly.
+*   For **playback**, it moves all `SoundComponent`s from the old device's mixer to the new one.
+*   For **capture**, it moves all event subscribers from the old device's `OnAudioProcessed` event to the new one.
+*   It automatically disposes the old device instance.
+
+    ```csharp
+    // ... (Setup from the Playback Device example) ...
+    using var engine = new MiniAudioEngine();
+    var format = AudioFormat.DvdHq;
+
+    // 1. Initialize with the default device.
+    var playbackDevice = engine.InitializePlaybackDevice(null, format);
+    var oscillator = new Oscillator(engine, format) { Frequency = 440f, Volume = 0.5f };
+    playbackDevice.MasterMixer.AddComponent(oscillator);
+    playbackDevice.Start();
+    Console.WriteLine($"Playing tone on: {playbackDevice.Info?.Name}");
+
+    // 2. Loop to allow switching.
+    while(true)
+    {
+        Console.WriteLine("\nPress 's' to switch device, or 'q' to quit.");
+        if (Console.ReadKey(true).Key == ConsoleKey.Q) break;
+
+        // Prompt user to select a new device from the list.
+        engine.UpdateDevicesInfo();
+        Console.WriteLine("Select new playback device:");
+        for (int i = 0; i < engine.PlaybackDevices.Length; i++)
+        Console.WriteLine($"{i}: {engine.PlaybackDevices[i].Name}");
+
+        if (int.TryParse(Console.ReadLine(), out var index) && index >= 0 && index < engine.PlaybackDevices.Length)
+    {
+        var newDeviceInfo = engine.PlaybackDevices[index];
+        Console.WriteLine($"Switching playback to: {newDeviceInfo.Name}...");
+
+        // 3. THE SWITCH:
+        // The old device is disposed, a new one is returned, and the oscillator is moved automatically.
+        playbackDevice = engine.SwitchDevice(playbackDevice, newDeviceInfo);
+
+        Console.WriteLine($"Successfully switched. Now playing on: {playbackDevice.Info?.Name}");
+    }
+    }
+
+    playbackDevice.Dispose();
+    ```
+
+## Advanced Device Configuration
+
+For fine-grained control over latency and backend-specific features, you can use the `MiniAudioDeviceConfig` class when initializing a device. This allows you to tune parameters like buffer sizes, sharing modes, and platform-specific settings.
+
+This is just a glimpse of the available options. For a full list of configurable parameters, please refer to the <strong>API Reference</strong> for <code>MiniAudioDeviceConfig</code> and its nested settings classes.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Abstracts.Devices;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Backends.MiniAudio.Devices;
+using SoundFlow.Backends.MiniAudio.Enums;
+using SoundFlow.Structs;
+
+using var engine = new MiniAudioEngine();
+var format = AudioFormat.DvdHq;
+
+// Create a detailed configuration object.
+var customConfig = new MiniAudioDeviceConfig
+{
+// Request a specific buffer size. 960 frames at 48kHz stereo = 10ms latency.
+PeriodSizeInFrames = 960,
+
+// Use shared mode for better compatibility with other applications.
+// For lowest latency, you could try ShareMode.Exclusive.
+Playback = new DeviceSubConfig { ShareMode = ShareMode.Shared },
+Capture = new DeviceSubConfig { ShareMode = ShareMode.Shared },
+
+// Platform-specific settings. For Windows, use WASAPI in ProAudio mode.
+Wasapi = new WasapiSettings{ Usage = WasapiUsage.ProAudio }
+};
+
+// Pass the config when initializing the device.
+using var playbackDevice = engine.InitializePlaybackDevice(null, format, customConfig);
+
+Console.WriteLine($"Initialized device '{playbackDevice.Info?.Name}' with custom configuration.");
+// ... rest of your playback logic ...
+```

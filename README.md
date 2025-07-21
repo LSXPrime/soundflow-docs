@@ -1,39 +1,41 @@
 # SoundFlow Documentation Website
 
-[![Dive into Getting Started](https://img.shields.io/badge/Dive%20into%20Getting%20Started-blue?style=for-the-badge)](https://lsxprime.github.io/soundflow/getting-started)
-[![Star on GitHub](https://img.shields.io/github/stars/LSXPrime/SoundFlow?style=for-the-badge)](https://github.com/LSXPrime/SoundFlow)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/LSXPrime/soundflow-docs/deploy.yml?style=for-the-badge&logo=github)](https://github.com/LSXPrime/soundflow-docs/actions/workflows/deploy.yml)
+[![GitHub Stars](https://img.shields.io/github/stars/LSXPrime/SoundFlow?style=for-the-badge&logo=github&label=Star%20the%20Library)](https://github.com/LSXPrime/SoundFlow)
+[![View Docs](https://img.shields.io/badge/View%20Docs-blue?style=for-the-badge&logo=react)](https://lsxprime.github.io/soundflow-docs/)
 
-Welcome to the repository for the official documentation website of **SoundFlow**, a powerful and flexible .NET audio engine for cross-platform development. This website is built using Astro and Starlight to provide comprehensive and user-friendly documentation for developers using SoundFlow in their .NET projects.
+Welcome to the repository for the official documentation and landing page of **SoundFlow**, a powerful and flexible .NET audio engine for cross-platform development. This website is built with **Vite** and **React** to provide a rich, interactive, and user-friendly experience for developers using SoundFlow.
 
-This repository contains the source code for the documentation website itself, not the SoundFlow .NET library. For the SoundFlow library codebase, please visit the main [SoundFlow GitHub Repository](https://github.com/LSXPrime/SoundFlow).
+This repository contains the source code for the documentation website itself, not the SoundFlow .NET library. For the SoundFlow library codebase, please visit the main [**SoundFlow GitHub Repository**](https://github.com/LSXPrime/SoundFlow).
 
-## About SoundFlow Documentation
+## About This Website
 
-This website serves as the central hub for all information related to SoundFlow, aiming to empower developers to:
+This project serves as the central hub for all information related to SoundFlow. It's designed to:
 
-*   **Understand Core Concepts:** Learn the fundamental building blocks of SoundFlow and its architecture.
-*   **Explore the API:** Access a detailed API reference with namespaces, classes, interfaces, and members.
+*   **Introduce SoundFlow:** A polished, animated landing page showcases the key features and strengths of the engine.
 *   **Get Started Quickly:** Follow step-by-step guides to install and set up SoundFlow in your .NET projects.
-*   **Learn by Example:** Explore practical tutorials and code examples covering various audio processing tasks.
-*   **Master Advanced Topics:** Delve into extensibility, performance optimization, and threading considerations for expert-level usage.
+*   **Provide Comprehensive Docs:** Access multi-version API references, tutorials, and practical examples.
+*   **Be a Joy to Use:** Offer a fast, searchable, and responsive interface with light and dark modes.
 
-## Technologies Used
+## Features
 
-This documentation website is built using the following technologies:
-
-*   **[Astro](https://astro.build/):** A modern static site builder for creating fast, content-focused websites.
-*   **[@astrojs/starlight](https://starlight.astro.build/):** An Astro integration specifically designed for building beautiful and performant documentation websites.
-*   **.NET & C#:**  While the website itself is built with web technologies, it documents a .NET library.
-*   **Markdown & MDX:** Documentation content is written in Markdown and MDX for enhanced authoring capabilities.
+*   **Modern Tech Stack:** Built with Vite, React, and TypeScript for a fast and type-safe developer experience.
+*   **Rich Content:** Documentation is written in MDX, allowing for interactive React components directly within Markdown.
+*   **Jamstack Architecture:** Content is processed at build time into static JSON, ensuring lightning-fast page loads.
+*   **Client-Side Search:** An instant, pre-indexed search powered by FlexSearch.
+*   **Versioning:** Easily switch between different versions of the documentation.
+*   **Interactive Components:** Features stylish code blocks with a "typewriter" effect and a highly versatile `Steps` component.
+*   **Polished UI/UX:** Smooth animations and transitions powered by Framer Motion.
+*   **Automated Deployments:** Deploys automatically to GitHub Pages on every push to the `main` branch.
 
 ## Running Locally
 
-To run this documentation website locally, you'll need to have Node.js and npm (or your preferred Node.js package manager) installed. Follow these steps:
+To run this documentation website locally, you'll need to have Node.js and npm installed. Follow these steps:
 
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/LSXPrime/soundflow-docs.git
-    cd soundflow-docs 
+    cd soundflow-docs
     ```
 
 2.  **Install dependencies:**
@@ -46,21 +48,20 @@ To run this documentation website locally, you'll need to have Node.js and npm (
     npm run dev
     ```
 
-    This will start the Astro development server. Open your browser and navigate to `http://localhost:4321/` (or the address shown in your terminal) to view the documentation website.
+    This will start the Vite development server. Open your browser and navigate to the address shown in your terminal (usually `http://localhost:5173/`) to view the website. Changes to both code and content in the `/content` directory will trigger a hot-reload.
 
 ## Contributing
 
 We welcome contributions to improve the SoundFlow documentation! Here's how you can help:
 
-*   **Report Issues:** If you find errors, typos, or areas that are unclear, please [open an issue on GitHub](https://github.com/LSXPrime/SoundFlow/issues) describing the problem.
-*   **Suggest Features:** Have ideas for new documentation sections, tutorials, or improvements? [Submit a feature request](https://github.com/LSXPrime/SoundFlow/issues).
-*   **Contribute Content:**  You can directly contribute to the documentation content!
-    *   **Edit on GitHub:**  Each documentation page has an "Edit this page on GitHub" link at the bottom. Click this link to directly edit the page in your browser and submit a pull request.
-    *   **Pull Requests:** For larger changes or additions, fork the repository, make your changes, and submit a pull request.
+*   **Report Library Issues:** If you find a bug or have a feature request for the **SoundFlow .NET library**, please [open an issue on the main repository](https://github.com/LSXPrime/SoundFlow/issues).
+*   **Improve the Documentation:** For errors, typos, or unclear sections on *this website*, you can:
+    *   **Edit Content Directly:** The documentation is located in the `content/` directory. You can edit the `.mdx` files and submit a pull request.
+    *   **Fix a Bug:** Find a bug in the website's React components? Fork the repository, fix it, and open a pull request.
 
 We appreciate your help in making the SoundFlow documentation better for everyone!
 
 ## Links
 
-*   **Live Documentation Website:** [https://lsxprime.github.io/soundflow](https://lsxprime.github.io/soundflow)
-*   **SoundFlow GitHub Repository (Main Library):** [https://github.com/LSXPrime/SoundFlow](https://github.com/LSXPrime/SoundFlow)
+*   **Live Documentation Website:** [**https://lsxprime.github.io/soundflow-docs/**](https://lsxprime.github.io/soundflow-docs/)
+*   **SoundFlow GitHub Repository (Main Library):** [**https://github.com/LSXPrime/SoundFlow**](https://github.com/LSXPrime/SoundFlow)
