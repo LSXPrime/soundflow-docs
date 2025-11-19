@@ -1,0 +1,297 @@
+﻿---
+id: 1.1
+title: Migration Guide (v1.2 to v1.3)
+description: A guide to updating your code from SoundFlow v1.2.x to the new v1.3.0 architecture, covering all breaking changes.
+navOrder: 1.1
+category: Core
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs} from "@heroui/react";
+import { Card, CardHeader, CardBody } from "@heroui/react";
+
+# Migration Guide: v1.2.1 to v1.3.0
+
+Welcome to SoundFlow v1.3.0! This is a major feature release that introduces a powerful pluggable architecture for codecs and MIDI, a built-in software synthesizer, and a comprehensive real-time control system.
+
+To enable these new capabilities, some core APIs have been refactored, resulting in a few necessary breaking changes. This guide is designed to walk you through each change with clear before-and-after examples to make the migration process as smooth as possible.
+
+## High-Level Architectural Changes
+
+The breaking changes in v1.3.0 were made to support three key architectural improvements:
+
+1.  **Pluggable Codec System:** The old, hardcoded audio format handling is replaced by a flexible, priority-based factory system. This allows SoundFlow to support virtually any audio format by adding a codec extension.
+2.  **Pluggable MIDI System:** The engine is now fully MIDI-aware through a new backend system, enabling MIDI I/O, routing, synchronization, and real-time control.
+3.  **Composition Refactor:** The `Composition` class has been refactored into a cleaner data model with dedicated service classes (`Editor`, `Renderer`, `Recorder`) to better organize its expanding feature set, including MIDI tracks and recording.
+
+## Breaking Changes in Detail
+
+Here is a step-by-step guide to updating your code for each breaking change.
+
+<div className="mt-6"> {/* Optional: Adds initial space before the first card */}
+    <Card className="bg-content1">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="mdi:file-code-outline" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">1. Codec and Provider System Overhaul</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            The `EncodingFormat` enum has been removed in favor of extensible string-based format identifiers (e.g., "wav", "mp3"). Additionally, `ISoundDataProvider` constructors have been updated to support automatic format detection.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> To support an unlimited number of audio formats via the new `ICodecFactory` system and simplify data provider creation.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="Codec and Provider Changes" className="mt-4">
+                <Tab key="before" title="Before (v1.2.1)">
+                    ```csharp
+                    // Creating a provider required a known format
+                    using var dataProvider = new StreamDataProvider(engine, format, stream);
+
+                    // Creating an encoder used the EncodingFormat enum
+                    using var encoder = engine.CreateEncoder(stream, EncodingFormat.Wav, format);
+
+                    // Creating a recorder also used the enum
+                    using var recorder = new Recorder(captureDevice, stream, EncodingFormat.Wav);
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.3.0)">
+                    ```csharp
+                    // Creating a provider can now auto-detect the format
+                    using var dataProvider = new StreamDataProvider(engine, stream);
+                    // Or you can still provide a target format hint
+                    using var dataProviderWithHint = new StreamDataProvider(engine, format, stream);
+
+                    // Creating an encoder now uses a string format ID
+                    using var encoder = engine.CreateEncoder(stream, "wav", format);
+
+                    // Creating a recorder also uses a string format ID
+                    using var recorder = new Recorder(captureDevice, stream, "wav");
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+
+    <Card className="bg-content1 mt-6">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="ph:stack-bold" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">2. Composition and Editing Engine Refactor</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            The `Composition` class is no longer an `ISoundDataProvider` itself. Its methods for manipulation and playback have been moved to dedicated service classes: `Editor`, `Renderer`, and `Recorder`.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> To separate the `Composition` data model from its operations, making the architecture cleaner and more extensible for new features like MIDI tracks, recording, and mapping.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="Composition Refactor Changes" className="mt-4">
+                <Tab key="before" title="Before (v1.2.1)">
+                    ```csharp
+                    // Composition did not require an engine in constructor
+                    var composition = new Composition(format, "My Song");
+                    composition.AddTrack(myTrack);
+
+                    // The composition itself was the data provider for playback
+                    var player = new SoundPlayer(engine, format, composition);
+
+                    // Rendering was a method on Composition
+                    var audio = composition.Render(TimeSpan.Zero, duration);
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.3.0)">
+                    ```csharp
+                    // Composition now requires the AudioEngine instance in its constructor
+                    var composition = new Composition(engine, format, "My Song");
+                    // Editing methods are now on the Editor service
+                    composition.Editor.AddTrack(myTrack);
+
+                    // Playback now uses the new Renderer property, which is an ISoundDataProvider
+                    var player = new SoundPlayer(engine, format, composition.Renderer);
+
+                    // Rendering is also done via the Renderer service
+                    var audio = composition.Renderer.Render(TimeSpan.Zero, duration);
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+
+    <Card className="bg-content1 mt-6">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="icon-park-outline:sound-wave" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">3. `Filter` is now a `SoundModifier`</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            The `Filter` class now inherits from `SoundModifier` instead of `SoundComponent`.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> A filter's role is to modify an existing audio stream, which aligns perfectly with the `SoundModifier` pattern. This makes its usage consistent with other effects and allows it to be used in the powerful modifier chains of the editing engine.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="Filter Change" className="mt-4">
+                <Tab key="before" title="Before (v1.2.1)">
+                    ```csharp
+                    var player = new SoundPlayer(engine, format, dataProvider);
+                    var filter = new Filter(engine, format) { CutoffFrequency = 500f };
+
+                    // Filter was connected as a separate component in the graph
+                    filter.ConnectInput(player);
+                    device.MasterMixer.AddComponent(filter);
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.3.0)">
+                    ```csharp
+                    var player = new SoundPlayer(engine, format, dataProvider);
+
+                    // Filter constructor no longer needs the engine
+                    var filter = new Filter(format) { CutoffFrequency = 500f };
+
+                    // Filter is now added as a modifier directly to the component
+                    player.AddModifier(filter);
+                    device.MasterMixer.AddComponent(player);
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+
+    <Card className="bg-content1 mt-6">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="lucide:refresh-cw" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">4. Splitting of `UpdateDevicesInfo()`</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            The `AudioEngine.UpdateDevicesInfo()` method has been marked as obsolete and replaced by two specific methods for audio and MIDI devices.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> To separate the enumeration of audio hardware from MIDI hardware, which is now managed by its own pluggable backend system.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="UpdateDevicesInfo Change" className="mt-4">
+                <Tab key="before" title="Before (v1.2.1)">
+                    ```csharp
+                    engine.UpdateDevicesInfo();
+                    // Now you can access engine.PlaybackDevices and engine.CaptureDevices
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.3.0)">
+                    ```csharp
+                    // For audio devices
+                    engine.UpdateAudioDevicesInfo();
+
+                    // For MIDI devices (after enabling a MIDI backend)
+                    engine.UpdateMidiDevicesInfo();
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+
+    <Card className="bg-content1 mt-6">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="lucide:alert-triangle" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">5. New <code>Result&lt;T&gt;</code> Error Handling Pattern</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            The simple `SoundFlow.Enums.Result` enum has been removed. Many new features, especially the `SoundMetadataReader`, now return a `SoundFlow.Structs.Result<T>` struct instead of throwing exceptions for common, expected failures (like reading a file with an unknown format). The `BackendException` constructor has also been updated to use an integer result code.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> To adopt a more modern, explicit, and robust approach to error handling that avoids costly exceptions for predictable failure scenarios.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="Result Pattern Change" className="mt-4">
+                <Tab key="before" title="Before (v1.2.1)">
+                    ```csharp
+                    // Old BackendException
+                    throw new BackendException("MyBackend", Result.Error, "Something failed.");
+
+                    // Hypothetical old metadata reader that throws exceptions
+                    try
+                    {
+                        var info = OldMetadataReader.Read("file.mp3");
+                    }
+                    catch (SomeFormatException ex)
+                    {
+                        Console.WriteLine($"Error: {ex.Message}");
+                    }
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.3.0)">
+                    ```csharp
+                    // New BackendException uses an int for the result code
+                    throw new BackendException("MyBackend", -1, "Something failed.");
+
+                    // New metadata reader uses the Result<T> pattern
+                    var result = SoundMetadataReader.Read("file.mp3");
+                    if (result.IsFailure)
+                    {
+                        // Handle the error without a try-catch block
+                        Console.WriteLine($"Error reading metadata: {result.Error?.Message}");
+                    }
+                    else
+                    {
+                        var info = result.Value;
+                        Console.WriteLine($"Duration: {info.Duration}");
+                    }
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+</div>
+
+## A Glimpse at New Features
+
+This update is packed with new capabilities. Here's a brief overview to get you started on your exploration:
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+    <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+        <CardHeader><div className="flex items-center gap-3"><Icon icon="ph:puzzle-piece-bold" className="text-primary text-xl" /> <h4 className="font-semibold">Pluggable Codecs & FFmpeg</h4></div></CardHeader>
+        <CardBody className="pt-0">
+            Add the `SoundFlow.Codecs.FFMpeg` package and call `engine.RegisterCodecFactory(new FFmpegCodecFactory())` to instantly add support for MP3, AAC, OGG, FLAC, and dozens more. See the **[FFmpeg Codec Extension](./ffmpeg-codec-extension)** page for more.
+        </CardBody>
+    </Card>
+    <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+        <CardHeader><div className="flex items-center gap-3"><Icon icon="cbi:midi" className="text-primary text-xl" /> <h4 className="font-semibold">Pluggable MIDI & PortMidi</h4></div></CardHeader>
+        <CardBody className="pt-0">
+            Add the `SoundFlow.Midi.PortMidi` package and call `engine.UsePortMidi()` to enable MIDI I/O. Use `engine.MidiManager` to list devices and create routes. See the **[PortMidi Backend](./portmidi-backend)** page for details.
+        </CardBody>
+    </Card>
+    <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+        <CardHeader><div className="flex items-center gap-3"><Icon icon="icon-park-outline:piano" className="text-primary text-xl" /> <h4 className="font-semibold">Synthesizer & Sequencer</h4></div></CardHeader>
+        <CardBody className="pt-0">
+            Use the new `Synthesizer` component as a MIDI destination. Load instruments from `.sf2` SoundFont files with `SoundFontBank`. Drive it all with the sample-accurate `Sequencer`. Explore the **[Synthesizer & Instruments](./synthesizer-and-instruments)** documentation.
+        </CardBody>
+    </Card>
+    <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+        <CardHeader><div className="flex items-center gap-3"><Icon icon="icon-park-outline:equalizer" className="text-primary text-xl" /> <h4 className="font-semibold">MIDI Control & Mapping</h4></div></CardHeader>
+        <CardBody className="pt-0">
+            Decorate properties with `[ControllableParameter]` to expose them for real-time control. Use `composition.MappingManager` to link your MIDI controller to any parameter in your project. Dive into the **[MIDI Control & Mapping](./midi-control-and-mapping)** guide.
+        </CardBody>
+    </Card>
+</div>
+
+## New Namespaces to Import
+
+As you update your code, you will likely need to add some of these new `using` directives:
+
+```csharp
+using SoundFlow.Editing;
+using SoundFlow.Synthesis;
+using SoundFlow.Midi;
+using SoundFlow.Interfaces;
+using SoundFlow.Structs; // For the new Result<T> and IError types
+
+// For extensions
+using SoundFlow.Codecs.FFMpeg;
+using SoundFlow.Midi.PortMidi;
+```
+
+---
+
+We believe these changes make SoundFlow a significantly more powerful and flexible audio framework. We encourage you to explore the updated documentation for in-depth guides on all the new features. If you have any questions or run into issues, please feel free to open an issue on our [GitHub repository](https://github.com/LSXPrime/SoundFlow).

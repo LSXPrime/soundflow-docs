@@ -1,0 +1,131 @@
+﻿---
+id: 17
+title: MPE (MIDI Polyphonic Expression) Support
+description: A guide to enabling and using MPE with the SoundFlow synthesizer for advanced, per-note expressive control.
+navOrder: 17
+category: Synthesis
+---
+
+import {Icon} from "@iconify/react";
+
+# MPE (MIDI Polyphonic Expression) Support
+
+SoundFlow v1.3.0 introduces comprehensive support for **MIDI Polyphonic Expression (MPE)**, an extension to the MIDI specification that allows for polyphonic, per-note expressive control. The `Synthesizer` component can be configured to interpret MPE data, enabling incredibly nuanced and dynamic performances that are not possible with standard MIDI.
+
+## What is MPE?
+
+In standard MIDI, channel-wide messages like Pitch Bend and Channel Pressure (Aftertouch) affect all notes being played on that channel simultaneously. If you bend a note in a chord, all notes in the chord bend.
+
+MPE solves this by using a clever channel-routing system:
+1.  A **Master Channel** (typically 1 or 16) is used for global messages like Program Change and Sustain Pedal.
+2.  A block of adjacent channels, called **Member Channels**, are reserved for note data.
+3.  When a new note is played, the MPE controller temporarily assigns it its own unique Member Channel.
+4.  All subsequent expression for that note—such as pitch bend (sliding a finger left/right), pressure (pressing harder), and timbre (sliding up/down, often CC 74)—is sent as standard channel-wide messages on that note's dedicated channel.
+5.  When the note is released, its channel is freed up for a new note.
+
+This allows for individual, polyphonic expression for each note in a chord, unlocking the full potential of modern expressive controllers like the ROLI Seaboard, LinnStrument, or Osmose.
+
+## How SoundFlow Handles MPE
+
+SoundFlow's MPE implementation is a collaboration between the `MidiManager` and the `Synthesizer`.
+
+1.  **Configuration:** You first tell the `MidiManager` that a specific input device is an MPE controller by calling `MidiManager.ConfigureMpeZone()`.
+2.  **Parsing:** The `MidiManager` then activates a special `MpeParser` for that device. This parser intercepts the raw MIDI stream and translates it into higher-level MPE event objects (e.g., `PerNotePitchBendEvent`, `PerNotePressureEvent`). It also handles the voice-to-channel allocation.
+3.  **Dispatching:** These high-level MPE events, along with the parsed Note On/Off messages, are then sent to the `Synthesizer`'s internal `ProcessMpeEvent()` method.
+4.  **Voice Modulation:** The `Synthesizer` routes these per-note expression events to the specific `IVoice` instance that is playing the target note. The `Voice` then uses this data to modulate its parameters in real-time (e.g., adjusting oscillator frequency for pitch bend, or filter cutoff for timbre).
+
+## Enabling and Using MPE
+
+Here is a complete, runnable example that demonstrates how to set up an MPE-enabled synthesizer and respond to per-note expression.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Midi.Routing;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using System;
+using System.Linq;
+
+public static class Program
+{
+    public static void Main()
+    {
+        Console.WriteLine("Synthesizer MPE Example");
+
+        // 1. Standard engine and MIDI backend setup
+        using var engine = new MiniAudioEngine();
+        var portMidiBackend = engine.UsePortMidi();
+        engine.UpdateMidiDevicesInfo();
+        var format = AudioFormat.DvdHq;
+
+        // 2. Find your MPE controller
+        var mpeControllerInfo = engine.MidiInputDevices.FirstOrDefault(d => d.Name.Contains("Your MPE Controller Name"));
+        if (mpeControllerInfo.Name == null)
+        {
+            Console.WriteLine("MPE controller not found. Please update the device name in the code.");
+            Console.ReadKey();
+            return;
+        }
+
+        // 3. Configure the MPE Zone in the MidiManager
+        // This example uses the ROLI Seaboard RISE default MPE configuration.
+        // Check your controller's manual for its specific settings.
+        var mpeZone = new MidiManager.MpeZone(
+            MasterChannel: 1,
+            MemberChannelsStart: 2,
+            MemberChannelCount: 15
+        );
+        engine.MidiManager.ConfigureMpeZone(mpeControllerInfo, mpeZone);
+        Console.WriteLine($"Configured '{mpeControllerInfo.Name}' as an MPE device.");
+
+        // 4. Create a Synthesizer and enable MPE mode
+        var instrumentBank = new BasicInstrumentBank(format);
+        var synthesizer = new Synthesizer(engine, format, instrumentBank)
+        {
+            Name = "MPE Synth",
+            MpeEnabled = true // This is the crucial step!
+        };
+        Console.WriteLine("Synthesizer MPE mode enabled.");
+
+        // 5. Create a direct route from the MPE controller to the synthesizer
+        engine.MidiManager.CreateRoute(mpeControllerInfo, synthesizer);
+
+        // 6. Setup audio output
+        using var device = engine.InitializePlaybackDevice(null, format);
+        device.MasterMixer.AddComponent(synthesizer);
+        device.Start();
+
+        Console.WriteLine("\nMPE Synthesizer is active. Play your MPE controller.");
+        Console.WriteLine("Try sliding your fingers left/right (pitch), up/down (timbre), and applying pressure.");
+        Console.WriteLine("Press any key to exit.");
+        Console.ReadKey();
+
+        // 7. Clean up
+        device.Stop();
+        synthesizer.Dispose();
+    }
+}
+```
+**Before running:**
+*   Replace `"Your MPE Controller Name"` with a unique part of your controller's name as it appears in MIDI device lists.
+*   Verify your controller's MPE settings match the `MpeZone` configuration (Master Channel, Member Channels). Most MPE controllers have a software utility to configure this.
+
+## How the `IVoice` Responds to MPE
+
+The default oscillator-based `Voice` implementation is pre-wired to respond to MPE data:
+
+*   **Per-Note Pitch Bend:** Directly modulates the frequency of the voice's oscillators.
+*   **Per-Note Pressure:** Modulates the cutoff frequency of the voice's filter (if enabled). Higher pressure opens the filter, making the sound brighter.
+*   **Per-Note Timbre (CC 74):** Also modulates the filter cutoff frequency, providing a second dimension of timbral control.
+
+<div className="flex items-center gap-3 my-4 p-4 rounded-lg bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+    <Icon icon="lucide:info" className="text-primary text-2xl flex-shrink-0" />
+    <p className="text-sm">
+        When creating custom `IVoice` implementations, you can implement the `SetPerNotePitchBend`, `SetPerNotePressure`, and `SetPerNoteTimbre` methods to define how your custom voice responds to these rich expression events.
+    </p>
+</div>
+
+Sample-based voices (from `SoundFontBank`) will respond to per-note pitch bend, but by default do not have built-in responses to pressure or timbre, as this requires specific modulation routing that is not standard in the SF2 format.

@@ -28,7 +28,7 @@ const getInitialState = (): AppSettings => {
         console.warn('Error reading settings from localStorage', error);
     }
     return {
-        typewriterEffect: true,
+        typewriterEffect: false,
         stepsVariant: 'glow',
     };
 };

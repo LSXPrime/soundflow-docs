@@ -1,0 +1,645 @@
+---
+id: 6
+title: Advanced Topics
+description: Learn how to extend the SoundFlow engine, optimize performance, and understand threading considerations.
+navOrder: 6
+category: Core
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs, Card, CardBody, CardHeader} from "@heroui/react";
+import { Steps, Step } from '/src/components/Shared/Steps';
+
+This section delves into more advanced topics related to SoundFlow, including extending the engine with custom components, optimizing performance, and understanding threading considerations.
+
+<Tabs color="primary" variant="bordered" aria-label="Advanced Topics">
+    <Tab
+        key="extending"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='ph:puzzle-piece-bold' />
+                <span>Extending SoundFlow</span>
+            </div>
+        }
+    >
+        ## Extending SoundFlow
+
+        One of SoundFlow's key strengths is its extensibility. You can tailor the engine to your specific needs by creating custom:
+
+        *   **Codec Factories (`ICodecFactory`)**: Add support for new audio formats (e.g., Ogg, AAC) by creating extensions like the official `SoundFlow.Codecs.FFMpeg` package.
+        *   **MIDI Backends (`IMidiBackend`)**: Integrate different MIDI APIs (e.g., CoreMIDI on macOS) by creating extensions like the official `SoundFlow.Midi.PortMidi` package.
+        *   **Sound Components (`SoundComponent`)**: Create unique audio generators or processors like synthesizers or custom mixers.
+        *   **Sound Modifiers (`SoundModifier`)**: Implement custom audio effects like distortion, phasers, or unique filters.
+        *   **MIDI Modifiers (`MidiModifier`)**: Implement custom real-time MIDI effects like arpeggiators, chord generators, or velocity curves.
+        *   **Audio Analyzers (`AudioAnalyzer`)** and **Visualizers (`IVisualizer`)**.
+        *   **Audio Backends (`AudioEngine`)**: Add support for entirely new low-level audio APIs like ASIO or JACK.
+        *   **Sound Data Providers (`ISoundDataProvider`)**.
+        *   **Extensions (e.g., for specific DSP libraries)**: SoundFlow supports integration with external audio processing libraries. For instance, the `SoundFlow.Extensions.WebRtc.Apm` package provides features like noise suppression and echo cancellation by wrapping the WebRTC Audio Processing Module. You can create similar extensions for other libraries.
+
+        ### Custom Codec Factories (`ICodecFactory`)
+
+        New in v1.3, you can add support for new audio formats by implementing the `ICodecFactory` interface. The engine maintains a list of registered factories and queries them based on priority when a decoder or encoder is requested for a specific format ID.
+
+        <Steps layout='vertical'>
+            <Step title="Implement ICodecFactory" icon='ph:plugs-connected-bold'>
+                Create a class that implements `ICodecFactory`.
+            </Step>
+            <Step title="Define Properties" icon='material-symbols:settings-outline'>
+                *   `FactoryId`: A unique string for your factory (e.g., "mycompany.mycodecfactory").
+                *   `SupportedFormatIds`: A collection of lowercase string identifiers for the formats you support (e.g., `"ogg"`, `"opus"`).
+                *   `Priority`: An integer indicating the factory's priority. Higher numbers are tried first. The built-in `MiniAudioCodecFactory` has a priority of 0.
+            </Step>
+            <Step title="Implement `Create` Methods" icon='mdi:file-code-outline'>
+                Implement `CreateDecoder`, `TryCreateDecoder`, and `CreateEncoder`.
+                *   `CreateDecoder`: Creates a decoder when the format is known.
+                *   `TryCreateDecoder`: Probes a stream to see if your factory can handle it, returning a decoder and the detected `AudioFormat` if successful.
+                *   `CreateEncoder`: Creates an encoder for writing to a specific format.
+            </Step>
+            <Step title="Register with Engine" icon='ph:sign-in-bold'>
+                Register an instance of your factory with the `AudioEngine` using `engine.RegisterCodecFactory(new MyCodecFactory())`.
+            </Step>
+        </Steps>
+
+        **Example (Skeleton):**
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Interfaces;
+        using SoundFlow.Structs;
+
+        public class MyOggCodecFactory : ICodecFactory
+        {
+            public string FactoryId => "mycompany.oggfactory";
+            public IReadOnlyCollection<string> SupportedFormatIds => new[] { "ogg" };
+            public int Priority => 10; // Higher than the default MiniAudio factory
+
+            public ISoundDecoder? CreateDecoder(Stream stream, string formatId, AudioFormat format)
+            {
+                if (formatId.ToLowerInvariant() == "ogg")
+                {
+                    // return new MyOggDecoder(stream, format);
+                }
+                return null;
+            }
+
+            public ISoundDecoder? TryCreateDecoder(Stream stream, out AudioFormat detectedFormat, AudioFormat? hintFormat = null)
+            {
+                // Logic to check the stream's header for "OggS" magic bytes.
+                // If it's an Ogg stream, parse the format, create the decoder, and return it.
+                // Otherwise, return null.
+                detectedFormat = default;
+                // ... probing logic ...
+                return null;
+            }
+            
+            public ISoundEncoder? CreateEncoder(Stream stream, string formatId, AudioFormat format)
+            {
+                // Not implemented in this example
+                return null;
+            }
+        }
+        ```
+
+        ### Custom MIDI Backends (`IMidiBackend`)
+
+        New in v1.3, you can integrate different MIDI APIs (e.g., Windows MIDI, CoreMIDI) by implementing the `IMidiBackend` interface.
+
+        <Steps layout='vertical'>
+            <Step title="Implement IMidiBackend" icon='ph:plugs-connected-bold'>
+                Create a class that implements `IMidiBackend` and `IDisposable`.
+            </Step>
+            <Step title="Implement Interface Methods" icon='material-symbols:function'>
+                *   `Initialize(AudioEngine engine)`: Called by the engine to provide a reference to itself. Used for subscribing to sync events.
+                *   `CreateMidiInputDevice(MidiDeviceInfo info)` and `CreateMidiOutputDevice(MidiDeviceInfo info)`: Return your backend-specific implementations that inherit from `MidiInputDevice` and `MidiOutputDevice`.
+                *   `UpdateMidiDevicesInfo(out MidiDeviceInfo[] inputs, out MidiDeviceInfo[] outputs)`: Enumerate the MIDI devices available through your backend's API.
+                *   `Dispose()`: Clean up all native resources.
+            </Step>
+            <Step title="Enable in Engine" icon='ph:sign-in-bold'>
+                Enable your backend by calling `engine.UseMidiBackend(new MyMidiBackend())`.
+            </Step>
+        </Steps>
+
+        ### Custom Sound Components
+
+        Creating custom `SoundComponent` classes allows you to implement unique audio processing logic and integrate it seamlessly into the SoundFlow audio graph.
+
+        <Steps layout='vertical'>
+            <Step title="Inherit from SoundComponent" icon='ph:git-fork-bold'>
+                Create a new class that inherits from the abstract `SoundComponent` class. Your constructor must accept `AudioEngine` and `AudioFormat` parameters and pass them to the base constructor.
+            </Step>
+            <Step title="Implement GenerateAudio" icon='lucide:audio-lines'>
+                Override the `GenerateAudio(Span<float> buffer, int channels)` method. This is where you'll write the core audio processing code for your component. The `buffer` passed to this method already contains the mixed output from all of the component's inputs.
+                *   If your component **generates** new audio (e.g., an oscillator), it should add its generated samples to the `buffer`.
+                *   If your component **modifies** incoming audio, it should process the samples within the `buffer` in-place.
+            </Step>
+            <Step title="Override other methods (optional)" icon='icon-park-outline:switch-one'>
+                You can override methods like `ConnectInput`, `AddAnalyzer`, `AddModifier`, etc., to customize how your component interacts with the audio graph.
+            </Step>
+            <Step title="Add Controllable Parameters (Optional)" icon='material-symbols:settings-outline'>
+                Add public properties to your component. To expose them to the MIDI mapping system, implement `IMidiMappable` (which `SoundComponent` already does) and decorate the properties with the `[ControllableParameter]` attribute.
+            </Step>
+        </Steps>
+
+        **Example:**
+
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Interfaces;
+        using SoundFlow.Structs;
+        using System;
+
+        public class CustomGainComponent : SoundComponent
+        {
+            [ControllableParameter("Gain", 0.0, 2.0)]
+            public float Gain { get; set; } = 1.0f;
+
+            public override string Name { get; set; } = "Custom Gain";
+            
+            public CustomGainComponent(AudioEngine engine, AudioFormat format) : base(engine, format) { }
+
+            protected override void GenerateAudio(Span<float> buffer, int channels)
+            {
+                for (int i = 0; i < buffer.Length; i++)
+                {
+                    buffer[i] *= Gain;
+                }
+            }
+        }
+        ```
+
+        **Usage:**
+
+        ```csharp
+        using SoundFlow.Backends.MiniAudio;
+        using SoundFlow.Components;
+        using SoundFlow.Providers;
+        using SoundFlow.Structs;
+        using System.Linq;
+        
+        // 1. Create an instance of an audio engine.
+        using var engine = new MiniAudioEngine();
+
+        // 2. Define the desired audio format.
+        var audioFormat = new AudioFormat { Format = SampleFormat.F32, SampleRate = 48000, Channels = 2 };
+
+        // 3. Get the default playback device info from the engine.
+        var deviceInfo = engine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+
+        // 4. Initialize a playback device.
+        using var device = engine.InitializePlaybackDevice(deviceInfo, audioFormat);
+
+        // 5. Create the player and your custom component, passing the engine and format.
+        using var dataProvider = new StreamDataProvider(engine, audioFormat, File.OpenRead("audio.wav"));
+        var player = new SoundPlayer(engine, audioFormat, dataProvider);
+        var gainComponent = new CustomGainComponent(engine, audioFormat) { Gain = 0.5f };
+
+        // 6. Connect the player as an input to the gain component.
+        gainComponent.ConnectInput(player);
+        
+        // 7. Add the final component in the chain to the device's master mixer.
+        device.MasterMixer.AddComponent(gainComponent);
+        
+        // 8. Start the device and play the sound.
+        device.Start();
+        player.Play();
+        // ...
+        ```
+
+        ### Custom Sound Modifiers
+
+        Custom `SoundModifier` classes allow you to implement your own audio effects.
+
+        <Steps layout='vertical'>
+            <Step title="Inherit from SoundModifier" icon='ph:git-fork-bold'>
+                Create a new class that inherits from the abstract `SoundModifier` class.
+            </Step>
+            <Step title="Implement ProcessSample" icon='icon-park-outline:sound-wave'>
+                Implement `ProcessSample(float sample, int channel)` (or override `Process` for buffer-level):
+                *   `ProcessSample(float sample, int channel)`: This method takes a single audio sample and the channel index as input and returns the modified sample.
+                *   `Process(Span<float> buffer, int channels)`: Override this for more complex effects that operate on entire buffers (e.g., FFT-based effects). By default, it calls `ProcessSample` for each sample.
+            </Step>
+            <Step title="Use 'Enabled' property" icon='material-symbols:toggle-on-outline'>
+                Your modifier will have an `Enabled` property (defaulting to `true`) to allow toggling its effect.
+            </Step>
+            <Step title="Add properties (optional)" icon='material-symbols:settings-outline'>
+                Add properties to your modifier to expose configurable parameters.
+            </Step>
+            <Step title="Implement MIDI Control (Optional)" icon='cbi:midi'>
+                Override `ProcessMidiMessage(MidiMessage message)` to allow your modifier's parameters to be controlled directly by MIDI CCs or other messages.
+            </Step>
+            <Step title="Add Controllable Parameters (Optional)" icon='material-symbols:settings-outline'>
+                Decorate public properties with `[ControllableParameter]` to expose them to the MIDI mapping system for UI-driven mapping.
+            </Step>
+        </Steps>
+
+        **Example:**
+
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Interfaces;
+        using System;
+
+        public class CustomDistortionModifier : SoundModifier
+        {
+            [ControllableParameter("Threshold", 0.01, 1.0)]
+            public float Threshold { get; set; } = 0.5f;
+
+            public override string Name { get; set; } = "Custom Distortion";
+
+            public override float ProcessSample(float sample, int channel)
+            {
+                // Simple hard clipping distortion
+                return Math.Clamp(sample, -Threshold, Threshold);
+            }
+        }
+        ```
+
+        **Usage:**
+
+        ```csharp
+        using SoundFlow.Backends.MiniAudio;
+        using SoundFlow.Components;
+        using SoundFlow.Providers;
+        using SoundFlow.Structs;
+        using System.Linq;
+
+        // 1. Create an engine and define the audio format.
+        using var engine = new MiniAudioEngine();
+        var audioFormat = new AudioFormat { Format = SampleFormat.F32, SampleRate = 48000, Channels = 2 };
+        
+        // 2. Get device info and initialize a playback device.
+        var deviceInfo = engine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+        using var device = engine.InitializePlaybackDevice(deviceInfo, audioFormat);
+        
+        // 3. Create the data provider and player.
+        using var dataProvider = new StreamDataProvider(engine, File.OpenRead("audio.wav"));
+        var player = new SoundPlayer(engine, audioFormat, dataProvider);
+
+        // 4. Create an instance of your custom modifier.
+        var distortion = new CustomDistortionModifier { Threshold = 0.7f };
+        // distortion.Enabled = false; // To disable it
+
+        // 5. Add the modifier to a SoundComponent (like a player).
+        player.AddModifier(distortion);
+        
+        // 6. Add the player to the device's master mixer.
+        device.MasterMixer.AddComponent(player);
+        
+        // 7. Start the device and play.
+        device.Start();
+        player.Play();
+        // ...
+        ```
+        
+        ### Custom MIDI Modifiers
+
+        New in v1.3, `MidiModifier` classes allow you to implement real-time MIDI effects like arpeggiators, chord generators, or velocity curves.
+
+        <Steps layout='vertical'>
+            <Step title="Inherit from MidiModifier" icon='ph:git-fork-bold'>
+                Create a new class that inherits from the abstract `MidiModifier` class.
+            </Step>
+            <Step title="Implement Process" icon='carbon:message-queue'>
+                Override the `Process(MidiMessage message)` method. This method returns an `IEnumerable<MidiMessage>`, allowing you to:
+                *   **Filter:** Return an empty collection to drop the message.
+                *   **Transform:** Return a collection with one modified message.
+                *   **Generate:** Return a collection with multiple new messages.
+            </Step>
+            <Step title="Add to a Track" icon='lucide:audio-lines'>
+                Add your modifier to a `MidiTrack`'s settings (`track.Settings.AddMidiModifier(myModifier)`). It will be applied to all MIDI events played by that track.
+            </Step>
+        </Steps>
+
+        **Example (Transpose):**
+        ```csharp
+        using SoundFlow.Midi.Abstracts;
+        using SoundFlow.Midi.Enums;
+        using SoundFlow.Midi.Structs;
+        using System;
+        using System.Collections.Generic;
+
+        public class TransposeModifier : MidiModifier
+        {
+            public int Semitones { get; set; }
+
+            public TransposeModifier(int semitones) => Semitones = semitones;
+
+            public override IEnumerable<MidiMessage> Process(MidiMessage message)
+            {
+                if (message.Command is MidiCommand.NoteOn or MidiCommand.NoteOff)
+                {
+                    var newNote = Math.Clamp(message.NoteNumber + Semitones, 0, 127);
+                    yield return message with { Data1 = (byte)newNote };
+                }
+                else
+                {
+                    yield return message; // Pass through other messages
+                }
+            }
+        }
+        ```
+
+        ### Custom Visualizers
+
+        Custom `IVisualizer` classes allow you to create unique visual representations of audio data.
+
+        <Steps layout='vertical'>
+            <Step title="Implement IVisualizer" icon='ph:plugs-connected-bold'>
+                Create a new class that implements the `IVisualizer` interface.
+            </Step>
+            <Step title="Implement ProcessOnAudioData" icon='carbon:data-vis-4'>
+                This method receives a `Span<float>` containing audio data. You should process this data and store the relevant information needed for rendering.
+            </Step>
+            <Step title="Implement Render" icon='material-symbols:draw-outline'>
+                This method receives an `IVisualizationContext`. Use the drawing methods provided by the context (e.g., `DrawLine`, `DrawRectangle`) to render your visualization.
+            </Step>
+            <Step title="Raise VisualizationUpdated" icon='mdi:bell-ring-outline'>
+                When the visualization data changes (e.g., after processing new audio data), raise the `VisualizationUpdated` event to notify the UI to update the display.
+            </Step>
+            <Step title="Implement Dispose" icon='material-symbols:delete-outline'>
+                Release any unmanaged resources or unsubscribe from events.
+            </Step>
+        </Steps>
+
+        **Example:**
+
+        ```csharp
+        using SoundFlow.Interfaces;
+        using System;
+        using System.Numerics;
+
+        public class CustomBarGraphVisualizer : IVisualizer
+        {
+            private float _level;
+
+            public string Name => "Custom Bar Graph";
+
+            public event EventHandler? VisualizationUpdated;
+
+            public void ProcessOnAudioData(Span<float> audioData)
+            {
+                if (audioData.IsEmpty) return;
+                // Calculate the average level (simplified for this example)
+                float sum = 0;
+                for (int i = 0; i < audioData.Length; i++)
+                {
+                    sum += Math.Abs(audioData[i]);
+                }
+                _level = sum / audioData.Length;
+
+                // Notify that the visualization needs to be updated
+                VisualizationUpdated?.Invoke(this, EventArgs.Empty);
+            }
+
+            public void Render(IVisualizationContext context)
+            {
+                // Clear the drawing area
+                context.Clear();
+
+                // Draw a simple bar graph based on the calculated level
+                float barHeight = _level * 200; // Scale the level for visualization
+                context.DrawRectangle(10, 200 - barHeight, 30, barHeight, new Color(0, 1, 0));
+            }
+
+            public void Dispose()
+            {
+                // Unsubscribe from events, release resources if any
+                VisualizationUpdated = null;
+            }
+        }
+        ```
+
+        ### Adding Audio Backends
+
+        SoundFlow is designed to support multiple audio backends. Currently, it includes a `MiniAudio` backend. You can add support for other audio APIs (e.g., WASAPI, ASIO, CoreAudio) by creating a new backend.
+
+        <Steps layout='vertical'>
+            <Step title="Inherit from AudioEngine" icon='ph:engine-bold'>
+                Create a new class that inherits from the abstract `AudioEngine`. This class will manage the entire lifecycle of your custom backend.
+            </Step>
+            <Step title="Implement Abstract Methods" icon='material-symbols:function'>
+                Implement all the abstract methods from `AudioEngine`:
+                *   `InitializeBackend()` and `CleanupBackend()`: Handle global setup/teardown of your native backend's context.
+                *   `InitializePlaybackDevice()`, `InitializeCaptureDevice()`, `InitializeFullDuplexDevice()`, `InitializeLoopbackDevice()`: These methods are the core of device management. You will implement the logic to initialize a device using your backend's API and return an instance of a class that inherits from the appropriate abstract device class.
+                *   `SwitchDevice(...)` (3 overloads): Implement logic to tear down an old device and initialize a new one while preserving the state (audio graph, event listeners
+                *   `CreateEncoder(...)` and `CreateDecoder(...)`: Return your backend-specific implementations of the `ISoundEncoder` and `ISoundDecoder` interfaces.).
+                *   `UpdateAudioDevicesInfo()`: Implement logic to enumerate playback and capture devices using the backend's API, populating `PlaybackDevices` and `CaptureDevices`.
+            </Step>
+            <Step title="Create Device Wrappers" icon='ph:package-bold'>
+                Create concrete classes inheriting from `AudioPlaybackDevice` and `AudioCaptureDevice`. These will wrap the native device handles and logic specific to your backend, including the audio callback that drives the processing graph.
+            </Step>
+            <Step title="Implement Codec Interfaces" icon='mdi:file-code-outline'>
+                Create classes that implement `ISoundEncoder` and `ISoundDecoder` to handle audio encoding and decoding for your chosen backend.
+            </Step>
+            <Step title="Implement a Codec Factory" icon='mdi:file-code-outline'>
+                Create a class that implements `ICodecFactory` to handle audio encoding and decoding for any formats your backend natively supports. Register this factory in your engine's constructor.
+            </Step>
+        </Steps>
+
+        **Example (Skeleton):**
+
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Abstracts.Devices;
+        using SoundFlow.Interfaces;
+        using SoundFlow.Structs;
+        using System;
+        using System.IO;
+        
+        // Custom Backend Engine
+        public class MyNewAudioEngine : AudioEngine
+        {
+            private nint _context; // Example native context handle
+            
+            public MyNewAudioEngine() { }
+
+            protected override void InitializeBackend()
+            {
+                // _context = NativeApi.InitContext();
+                // UpdateAudioDevicesInfo();
+                // RegisterCodecFactory(new MyBackendCodecFactory());
+                Console.WriteLine("MyNewAudioEngine: Backend initialized.");
+            }
+
+            protected override void CleanupBackend()
+            {
+                // NativeApi.UninitContext(_context);
+                Console.WriteLine("MyNewAudioEngine: Backend cleaned up.");
+            }
+            
+            public override AudioPlaybackDevice InitializePlaybackDevice(DeviceInfo? deviceInfo, AudioFormat format, DeviceConfig? config = null)
+            {
+                return new MyNewPlaybackDevice(this, _context, deviceInfo, format, config);
+            }
+
+            // Implement other abstract methods...
+            public override AudioCaptureDevice InitializeCaptureDevice(DeviceInfo? deviceInfo, AudioFormat format, DeviceConfig? config = null) => throw new NotImplementedException();
+            public override FullDuplexDevice InitializeFullDuplexDevice(DeviceInfo? playbackDeviceInfo, DeviceInfo? captureDeviceInfo, AudioFormat format, DeviceConfig? config = null) => throw new NotImplementedException();
+            public override AudioCaptureDevice InitializeLoopbackDevice(AudioFormat format, DeviceConfig? config = null) => throw new NotImplementedException();
+            public override ISoundEncoder CreateEncoder(Stream stream, EncodingFormat encodingFormat, AudioFormat format) => throw new NotImplementedException();
+            public override ISoundDecoder CreateDecoder(Stream stream, AudioFormat format) => throw new NotImplementedException();
+            public override void UpdateAudioDevicesInfo() { /* NativeApi.GetDevices(...); */ }
+            public override AudioPlaybackDevice SwitchDevice(AudioPlaybackDevice oldDevice, DeviceInfo newDeviceInfo, DeviceConfig? config = null) => throw new NotImplementedException();
+            public override AudioCaptureDevice SwitchDevice(AudioCaptureDevice oldDevice, DeviceInfo newDeviceInfo, DeviceConfig? config = null) => throw new NotImplementedException();
+            public override FullDuplexDevice SwitchDevice(FullDuplexDevice oldDevice, DeviceInfo? newPlaybackInfo, DeviceInfo? newCaptureInfo, DeviceConfig? config = null) => throw new NotImplementedException();
+        }
+
+        // Custom Playback Device Wrapper
+        public class MyNewPlaybackDevice : AudioPlaybackDevice
+        {
+            private nint _deviceHandle;
+            
+            public MyNewPlaybackDevice(AudioEngine engine, nint context, DeviceInfo? deviceInfo, AudioFormat format, DeviceConfig? config)
+                : base(engine, format, config ?? new MyDeviceConfig())
+            {
+                // _deviceHandle = NativeApi.InitDevice(context, deviceInfo?.Id, OnAudioCallback);
+                // this.Info = ... // Populate DeviceInfo from native API
+                this.Capability = Capability.Playback;
+            }
+
+            public override void Start() 
+            { 
+                // NativeApi.StartDevice(_deviceHandle); 
+                IsRunning = true; 
+                Engine.RaiseDeviceStarted(this); // Fire start event for sync
+            }
+            public override void Stop() 
+            { 
+                // NativeApi.StopDevice(_deviceHandle); 
+                IsRunning = false; 
+                Engine.RaiseDeviceStopped(this); // Fire stop event for sync
+            }
+            public override void Dispose() 
+            {
+                if (IsDisposed) return;
+                Stop();
+                // NativeApi.UninitDevice(_deviceHandle);
+                OnDisposedHandler();
+                IsDisposed = true;
+            }
+            
+            // This callback is invoked by the native backend on the audio thread.
+            private void OnAudioCallback(Span<float> buffer, int frameCount)
+            {
+                // Fire the render event before processing for master clock sync
+                Engine.RaiseAudioFramesRendered(this, frameCount);
+                
+                // Process the audio graph
+                var soloed = Engine.GetSoloedComponent();
+                if (soloed != null)
+                    soloed.Process(buffer, Format.Channels);
+                else
+                    MasterMixer.Process(buffer, Format.Channels);
+            }
+        }
+        
+        // Custom Device Configuration (Optional)
+        public class MyDeviceConfig : DeviceConfig { /* ... */ }
+        ```
+    </Tab>
+
+    <Tab
+        key="performance"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='ic:round-speed' />
+                <span>Performance Optimization</span>
+            </div>
+        }
+    >
+        ## Performance Optimization
+
+        Here are some tips for optimizing the performance of your SoundFlow applications:
+
+        *   **Buffer Sizes:** Choose appropriate buffer sizes for your use case. Smaller buffers reduce latency but increase CPU overhead. Larger buffers can improve efficiency but may introduce latency. With the `MiniAudio` backend, you can specify this via `MiniAudioDeviceConfig` when initializing a device.
+        *   **SIMD:** SoundFlow uses SIMD instructions (when available) in critical paths like the `Mixer`, `SoundComponent` (for volume and panning), `MathHelper` (for FFTs and windowing), the new `ChannelMixer` utility, and in the `DeviceBufferHelper` for audio format conversions. Ensure your target platform supports SIMD for the best performance.
+        *   **`ChannelMixer` Utility:** New in v1.3, the static `SoundFlow.Utils.ChannelMixer` class provides highly optimized, SIMD-accelerated methods for upmixing and downmixing audio channels (e.g., mono to stereo, stereo to mono, 5.1 to stereo). Use this for efficient channel manipulation.
+        *   **Profiling:** Use a profiler (like the one built into Visual Studio) to identify performance bottlenecks in your audio processing pipeline.
+        *   **Asynchronous Operations:** For long-running operations (e.g., loading large files, network requests in `NetworkDataProvider`, project saving/loading), use asynchronous programming (`async` and `await`) to avoid blocking the main thread or the audio thread.
+        *   **Avoid Allocations:** Minimize memory allocations within the `GenerateAudio` method of `SoundComponent` and the `ProcessSample` or `Process` method of `SoundModifier`. SoundFlow internally uses `ArrayPool<T>.Shared` for many temporary buffers to reduce GC pressure.
+        *   **Efficient Algorithms:** Use efficient algorithms for audio processing, especially in performance-critical sections.
+        *   **Modifier Overhead:** Each `SoundModifier` added to a component or to the editing hierarchy (`AudioSegment`, `Track`, `Composition`) introduces some overhead. For very simple operations, integrating them directly into a custom `SoundComponent` might be more performant than using many tiny modifiers. However, modifiers offer better reusability and modularity.
+        *   **Effect Toggling:** Use the `Enabled` property on `SoundModifier`, `AudioAnalyzer`, `SoundComponent`, `AudioSegmentSettings`, and `TrackSettings` to non-destructively disable effects or entire processing paths instead of removing and re-adding them, which is more efficient.
+    </Tab>
+
+    <Tab
+        key="threading"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='carbon:thread' />
+                <span>Threading Considerations</span>
+            </div>
+        }
+    >
+        ## Threading Considerations
+
+        SoundFlow uses a dedicated, high-priority thread (managed by the audio backend, e.g., MiniAudio) for audio processing. This ensures that audio is processed in real time and minimizes the risk of glitches or dropouts.
+
+        **Key Considerations:**
+
+        *   **Audio Thread:** The audio processing logic is executed on a dedicated audio thread. This thread is responsible for calling the audio callback provided to the backend. In SoundFlow's `MiniAudio` implementation, this callback triggers the `Process` method on the appropriate `MiniAudioPlaybackDevice` or `MiniAudioCaptureDevice`, which in turn traverses the `SoundComponent` graph (e.g., calling `MasterMixer.Process(...)`). Therefore, all code within `GenerateAudio` (for `SoundComponent`) and `Process`/`ProcessSample` (for `SoundModifier`) runs on this critical audio thread. Avoid performing any long-running or blocking operations (like I/O, complex non-audio computations, or direct UI updates) on this thread.
+        *   **UI Thread:** Never perform audio processing directly on the UI thread. This can lead to unresponsiveness and glitches. Use the `AudioEngine`'s audio thread for all audio-related operations. For UI updates based on audio events (e.g., from an `IVisualizer`'s `VisualizationUpdated` event), you must marshal the calls to the UI thread (e.g., using `Dispatcher.Invoke` in WPF/Avalonia, or `Control.Invoke` in WinForms).
+        *   **Thread Safety:** If you need to access or modify shared data from both the audio thread and another thread (e.g., the UI thread updating a `SoundModifier`'s property), use appropriate synchronization mechanisms (like `lock`, `Monitor`, or thread-safe collections) to ensure data integrity and prevent race conditions. Many properties on `SoundComponent` and `SoundModifier` are internally locked for thread-safe access from different threads.
+        *   **Engine Synchronization Events (New in v1.3):** The `AudioEngine` now exposes events that are crucial for building synchronized systems (like a MIDI backend that needs to send MIDI Clock).
+            *   `DeviceStarted`: Raised when an `AudioDevice`'s `Start()` method is called. Fired on the calling thread.
+            *   `DeviceStopped`: Raised when an `AudioDevice`'s `Stop()` method is called. Fired on the calling thread.
+            *   `AudioFramesRendered`: Raised from within the audio callback on the high-priority audio thread *before* the audio graph is processed. It provides a sample-accurate timing source for driving master synchronization logic.
+
+        <Card className="bg-warning-50/50 dark:bg-warning-500/10 border-1 border-warning-200/50 dark:border-warning-500/20 my-6">
+            <CardHeader>
+                <div className="flex items-center gap-3">
+                    <Icon icon="lucide:alert-triangle" className="text-warning text-2xl flex-shrink-0" />
+                    <h4 className="font-semibold text-lg">Important Note for WPF & Avalonia Users</h4>
+                </div>
+            </CardHeader>
+            <CardBody className="pt-0">
+                <div className="text-sm">
+                    A subtle but critical conflict can occur when initializing audio on the main UI thread in modern Windows UI frameworks. This can cause features like Drag & Drop, the clipboard, and IMEs (Input Method Editors) to stop working.
+                </div>
+                <h5 className="font-semibold mt-4 mb-2">The Core Issue: COM Thread State Conflict</h5>
+                <ul className="list-disc pl-5 space-y-2 text-sm">
+                    <li>
+                        <strong>UI Frameworks (WPF/Avalonia) Require STA:</strong> These frameworks need the main UI thread to be in a **Single-Threaded Apartment (STA)** state for many core OS services to function correctly.
+                    </li>
+                    <li>
+                        <strong>Audio Backends (WASAPI) Default to MTA:</strong> For performance, low-level audio APIs often initialize the Component Object Model (COM) in a **Multi-Threaded Apartment (MTA)** state.
+                    </li>
+                    <li>
+                        <strong>The Conflict:</strong> A thread's COM state can only be set **once**. If you call `engine.InitializePlaybackDevice()` on the UI thread, the audio backend may set the state to MTA, permanently breaking STA-dependent UI features.
+                    </li>
+                </ul>
+                <h5 className="font-semibold mt-4 mb-2">The Solution: Initialize on a Background Thread</h5>
+                <div className="text-sm mb-2">
+                    The correct architectural pattern is to perform all SoundFlow initialization and long-running audio operations on a background thread. This keeps the UI thread responsive and in its required STA state.
+                </div>
+                ```csharp
+                // In your Avalonia or WPF application:
+                private async void OnPlayButtonClicked(object sender, RoutedEventArgs e)
+                {
+                    // INCORRECT: This blocks the UI thread and causes the COM conflict.
+                    // var engine = new MiniAudioEngine();
+                    // var device = engine.InitializePlaybackDevice(null, AudioFormat.DvdHq);
+                    // ...
+
+                    // CORRECT: Offload all audio work to a background thread.
+                    await Task.Run(() =>
+                    {
+                        using var engine = new MiniAudioEngine();
+                        using var device = engine.InitializePlaybackDevice(null, AudioFormat.DvdHq);
+                        using var dataProvider = new StreamDataProvider(engine, new FileStream("audio.mp3", FileMode.Open));
+                        var player = new SoundPlayer(engine, device.Format, dataProvider);
+
+                        device.MasterMixer.AddComponent(player);
+                        device.Start();
+                        player.Play();
+
+                        // Keep the background task alive while playing.
+                        // In a real app, you would manage the engine and device lifecycle
+                        // in a more persistent way (e.g., in a service class).
+                        Thread.Sleep(5000); 
+                    });
+                }
+                ```
+            </CardBody>
+        </Card>
+    </Tab>
+</Tabs>

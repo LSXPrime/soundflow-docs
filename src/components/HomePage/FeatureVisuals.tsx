@@ -59,8 +59,6 @@ export const EditingVisual: React.FC = () => {
     );
 };
 
-// --- NEW VISUALS START HERE ---
-
 // Visual for "Immersive Surround Sound"
 export const SurroundVisual: React.FC = () => {
     const speakerPositions = [
@@ -143,6 +141,95 @@ export const AnalyzerVisual: React.FC = () => {
     );
 };
 
+// Visual for "Universal Codec Support"
+export const CodecVisual: React.FC = () => {
+    return (
+        <div className="flex h-80 items-center justify-center rounded-2xl border border-zinc-400 bg-white p-4 shadow-lg shadow-zinc-900/5 dark:border-zinc-700/50 dark:bg-zinc-900 dark:shadow-2xl dark:shadow-zinc-950/50">
+            <div className="flex items-center gap-6 text-xs text-zinc-500 dark:text-zinc-400">
+                {/* Input Files */}
+                <div className="flex flex-col gap-3">
+                    {['MP3', 'FLAC', 'AAC'].map((fmt) => (
+                        <div key={fmt} className="flex items-center gap-2 rounded-md border border-zinc-300 bg-zinc-100 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+                            <Icon icon="solar:file-audio-bold-duotone" className="h-5 w-5 text-purple-400" />
+                            <span className="font-mono font-bold">{fmt}</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Processing Core */}
+                <div className="relative flex h-24 w-24 flex-col items-center justify-center rounded-xl bg-gradient-to-br from-lime-400 to-lime-600 shadow-lg shadow-lime-500/20">
+                    <Icon icon="solar:cpu-bolt-bold-duotone" className="h-10 w-10 text-white" />
+                    <span className="mt-1 text-[10px] font-bold text-white">Pluggable Codec</span>
+                </div>
+
+                {/* Output Stream */}
+                <div className="flex flex-col items-center gap-2">
+                    <div className="flex h-12 w-32 items-center justify-center rounded-md border border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
+                        <svg width="100" height="24" viewBox="0 0 100 24">
+                            <path d="M0,12 Q12,0 25,12 T50,12 T75,12 T100,12" fill="none" stroke="#a3e635" strokeWidth="2" />
+                        </svg>
+                    </div>
+                    <span className="font-mono font-bold">PCM Data</span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Visual for "Synthesis & MIDI Sequencing"
+export const SynthVisual: React.FC = () => {
+    return (
+        <div className="flex h-80 flex-col items-center justify-center gap-6 rounded-2xl border border-zinc-400 bg-white p-4 shadow-lg shadow-zinc-900/5 dark:border-zinc-700/50 dark:bg-zinc-900 dark:shadow-2xl dark:shadow-zinc-950/50">
+
+            {/* Signal Flow */}
+            <div className="flex w-full max-w-sm items-center justify-between text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <div className="flex flex-col items-center gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-300 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
+                        <Icon icon="solar:keyboard-bold-duotone" className="h-5 w-5 text-purple-400" />
+                    </div>
+                    <span>MIDI</span>
+                </div>
+
+                <Icon icon="solar:arrow-right-linear" className="h-4 w-4 text-zinc-300 dark:text-zinc-600" />
+
+                <div className="flex flex-col items-center gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-300 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
+                        <Icon icon="solar:soundwave-square-bold-duotone" className="h-5 w-5 text-lime-400" />
+                    </div>
+                    <span>Synthesizer</span>
+                </div>
+
+                <Icon icon="solar:arrow-right-linear" className="h-4 w-4 text-zinc-300 dark:text-zinc-600" />
+
+                <div className="flex flex-col items-center gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-300 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
+                        <Icon icon="solar:slider-vertical-minimalistic-bold-duotone" className="h-5 w-5 text-purple-400" />
+                    </div>
+                    <span>Instrument</span>
+                </div>
+
+                <Icon icon="solar:arrow-right-linear" className="h-4 w-4 text-zinc-300 dark:text-zinc-600" />
+
+                <div className="flex flex-col items-center gap-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-300 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
+                        <Icon icon="solar:speaker-bold-duotone" className="h-5 w-5 text-lime-400" />
+                    </div>
+                    <span>Audio</span>
+                </div>
+            </div>
+
+            {/* Piano Roll Decoration */}
+            <div className="flex h-16 w-full max-w-sm gap-0.5 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-black/20">
+                {[...Array(12)].map((_, i) => (
+                    <div key={i} className={`flex-1 rounded-sm ${i % 2 === 0 ? 'bg-purple-500/20' : 'bg-transparent'} relative`}>
+                        {i === 3 && <div className="absolute bottom-1 left-1 right-1 top-4 rounded bg-lime-400 shadow-[0_0_10px_rgba(163,230,53,0.5)]" />}
+                        {i === 7 && <div className="absolute bottom-1 left-1 right-1 top-2 rounded bg-purple-400 shadow-[0_0_10px_rgba(192,132,252,0.5)]" />}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
 
 export const FeatureVisuals: React.FC = () => {
     return (
@@ -188,6 +275,27 @@ export const FeatureVisuals: React.FC = () => {
                 ]}
                 title="Real-time Visualization & Analysis"
                 visual={<AnalyzerVisual />}
+            />
+            <AlternatingFeatures
+                description="WAV, MP3, FLAC supported by default with Miniaudio. Seamlessly read/write many formats (MP3, AAC, OGG, Opus, FLAC, etc.) using the FFmpeg codec plugin, eliminating the need for external tools."
+                points={[
+                    "Broad Format Support (MP3, AAC, FLAC, Opus)",
+                    "Hardware Acceleration where available",
+                    "Metadata & Tagging Support",
+                ]}
+                title="Universal Format Support"
+                visual={<CodecVisual />}
+            />
+            <AlternatingFeatures
+                description="Create music programmatically. The new engine features a polyphonic synthesizer with SoundFont support, MPE capabilities, and a high-resolution sequencer for complex musical arrangements."
+                isReversed={true}
+                points={[
+                    "Subtractive Synthesis & SoundFonts (.sf2)",
+                    "Hardware MIDI I/O (PortMidi)",
+                    "Arpeggiators & MIDI Effects",
+                ]}
+                title="Synthesis & MIDI Sequencing"
+                visual={<SynthVisual />}
             />
         </div>
     );

@@ -1,0 +1,390 @@
+﻿---
+id: 13.3
+title: Real-time MIDI Modifiers
+description: Learn how to create custom real-time MIDI effects like arpeggiators, chord generators, and velocity curves using the MidiModifier class.
+navOrder: 13.3
+category: MIDI
+---
+
+# Real-time MIDI Modifiers
+
+The `MidiModifier` (`SoundFlow.Midi.Abstracts.MidiModifier`) is a powerful component for creating real-time MIDI effects. It acts as an interceptor in a MIDI signal path, allowing you to filter, transform, or even generate new MIDI messages on the fly before they reach their destination.
+
+This contrasts with `SoundModifier`, which operates on audio samples. `MidiModifier`s work on MIDI data, which is the instructional data *before* any sound is produced. This makes them ideal for creating musical tools like arpeggiators, chord generators, velocity curve shapers, and more.
+
+## 1. The `MidiModifier` Abstract Class
+
+To create a MIDI effect, you inherit from the `MidiModifier` base class.
+
+```csharp
+public abstract class MidiModifier : IMidiMappable
+{
+    // A unique ID for this instance, used for MIDI mapping its parameters.
+    public Guid Id { get; }
+
+    // A user-friendly name for the modifier.
+    public virtual string Name { get; set; }
+
+    // Toggles the effect on or off. If false, messages pass through unprocessed.
+    public bool IsEnabled { get; set; } = true;
+
+    // The core method you must implement.
+    public abstract IEnumerable<MidiMessage> Process(MidiMessage message);
+}
+```
+
+The key to its flexibility is the `Process` method. By returning an `IEnumerable<MidiMessage>`, you can control the MIDI stream in three fundamental ways.
+
+## 2. The `Process` Method: A Deep Dive
+
+The `Process` method is a generator function. Whatever `MidiMessage` objects you `yield return` from this method will be passed on to the next stage in the chain.
+
+### Scenario 1: Filtering (Returning Zero Messages)
+
+To filter out or "drop" a MIDI message, simply do not `yield return` anything. The message will be consumed by your modifier and will not continue down the signal path.
+
+#### Full Example: `ChannelFilterModifier`
+
+This modifier will only allow messages on a specific MIDI channel to pass through, dropping all others.
+
+```csharp
+using SoundFlow.Midi.Abstracts;
+using SoundFlow.Midi.Structs;
+using System.Collections.Generic;
+
+/// <summary>
+/// A MIDI modifier that filters messages, only allowing those on a specific channel to pass.
+/// </summary>
+public sealed class ChannelFilterModifier : MidiModifier
+{
+    /// <summary>
+    /// Gets or sets the MIDI channel to allow (1-16).
+    /// </summary>
+    public int AllowedChannel { get; set; }
+
+    public ChannelFilterModifier(int channel)
+    {
+        AllowedChannel = channel;
+        Name = $"Channel Filter ({channel})";
+    }
+
+    /// <inheritdoc />
+    public override IEnumerable<MidiMessage> Process(MidiMessage message)
+    {
+        // Check if the incoming message's channel matches the allowed channel.
+        if (message.Channel == AllowedChannel)
+        {
+            // If it matches, yield return the original message to let it pass through.
+            yield return message;
+        }
+        // If it does not match, we do nothing. The message is effectively dropped.
+    }
+}
+```
+
+### Scenario 2: Transforming (Returning One Message)
+
+To modify a message, you create a new `MidiMessage` instance with the altered data and `yield return` it. The original message is discarded, and the new one takes its place in the stream.
+
+#### Full Example: `TransposeModifier`
+
+This modifier changes the pitch of `NoteOn` and `NoteOff` messages, passing all other message types through unchanged.
+
+```csharp
+using SoundFlow.Midi.Abstracts;
+using SoundFlow.Midi.Enums;
+using SoundFlow.Midi.Structs;
+using SoundFlow.Structs;
+
+namespace SoundFlow.Midi.Modifier;
+
+/// <summary>
+/// A MIDI modifier that transposes the pitch of Note On and Note Off messages.
+/// </summary>
+public sealed class TransposeModifier : MidiModifier
+{
+    /// <inheritdoc />
+    public override string Name => $"Transpose ({Semitones} st)";
+
+    /// <summary>
+    /// Gets or sets the amount to transpose in semitones. Can be positive or negative.
+    /// </summary>
+    public int Semitones { get; set; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TransposeModifier"/> class.
+    /// </summary>
+    /// <param name="semitones">The transposition amount in semitones.</param>
+    public TransposeModifier(int semitones)
+    {
+        Semitones = semitones;
+    }
+
+    /// <inheritdoc />
+    public override IEnumerable<MidiMessage> Process(MidiMessage message)
+    {
+        // Only process Note On and Note Off messages.
+        if (message.Command is MidiCommand.NoteOn or MidiCommand.NoteOff)
+        {
+            // Transpose the note number and clamp it to the valid MIDI range (0-127).
+            var newNote = Math.Clamp(message.NoteNumber + Semitones, 0, 127);
+
+            // Create a new message with the transposed note number.
+            yield return new MidiMessage(message.StatusByte, (byte)newNote, message.Data2, message.Timestamp);
+        }
+        else
+        {
+            // Pass through all other message types unchanged.
+            yield return message;
+        }
+    }
+}
+```
+
+### Scenario 3: Generating (Returning Multiple Messages)
+
+To generate new MIDI events from a single input event, you can `yield return` multiple `MidiMessage` objects. This is the basis for effects like arpeggiators or chord generators.
+
+#### Full Example: `ChordModifier`
+
+This modifier takes a single `NoteOn` message and generates a major chord. It also correctly handles the `NoteOff` message to silence all the notes it generated.
+
+```csharp
+using SoundFlow.Midi.Abstracts;
+using SoundFlow.Midi.Enums;
+using SoundFlow.Midi.Structs;
+
+/// <summary>
+/// A MIDI modifier that generates a major chord from a single incoming note.
+/// </summary>
+public sealed class ChordModifier : MidiModifier
+{
+    // Stores the original note that triggered the chord, so we know which chord to turn off.
+    private readonly Dictionary<int, int[]> _activeChords = new(); // Key: rootNote, Value: [third, fifth]
+
+    public ChordModifier()
+    {
+        Name = "Major Chord Generator";
+    }
+
+    /// <inheritdoc />
+    public override IEnumerable<MidiMessage> Process(MidiMessage message)
+    {
+        // Pass through disabled modifiers.
+        if (!IsEnabled)
+        {
+            yield return message;
+            yield break;
+        }
+
+        if (message is { Command: MidiCommand.NoteOn, Velocity: > 0 })
+        {
+            var rootNote = message.NoteNumber;
+            var third = rootNote + 4; // Major third
+            var fifth = rootNote + 7; // Perfect fifth
+
+            // Store the notes we're about to create.
+            _activeChords[rootNote] = [third, fifth];
+
+            // 1. Yield the original root note.
+            yield return message;
+
+            // 2. Generate and yield the new third note, if valid.
+            if (third <= 127)
+                yield return new MidiMessage((byte)((byte)message.Command | (message.Channel - 1)), (byte)third, message.Data2, message.Timestamp);
+
+            // 3. Generate and yield the new fifth note, if valid.
+            if (fifth <= 127)
+                yield return new MidiMessage((byte)((byte)message.Command | (message.Channel - 1)), (byte)fifth, message.Data2, message.Timestamp);
+        }
+        else if (message.Command == MidiCommand.NoteOff || (message.Command == MidiCommand.NoteOn && message.Velocity == 0))
+        {
+            var rootNote = message.NoteNumber;
+
+            // 1. Yield the original Note Off message to turn off the root note.
+            yield return message;
+
+            // 2. If this root note triggered a chord, generate Note Off messages for the other notes.
+            if (_activeChords.Remove(rootNote, out var chordNotes))
+            {
+                var noteOffCommand = (byte)((byte)message.Command | (message.Channel - 1));
+                yield return new MidiMessage(noteOffCommand, (byte)chordNotes[0], 0); // Third
+                yield return new MidiMessage(noteOffCommand, (byte)chordNotes[1], 0); // Fifth
+            }
+        }
+        else
+        {
+            // Pass all other messages through.
+            yield return message;
+        }
+    }
+}
+```
+
+## 4. How and Where to Use MIDI Modifiers
+
+There are two primary places you can insert a `MidiModifier` into the signal path.
+
+### Use Case 1: Modifying a Live `MidiRoute`
+
+You can add modifiers directly to a `MidiRoute` to process live MIDI input in real time.
+
+```csharp
+// (Continuing from the "Live Instrument Control" example in the Routing guide)
+
+// ... setup engine, synthesizer, and get inputDeviceInfo ...
+
+// Create a live route from the keyboard to the synthesizer.
+var liveRoute = engine.MidiManager.CreateRoute(inputDeviceInfo, synthesizer);
+
+// Create an instance of our custom ChordModifier.
+var chordModifier = new ChordModifier();
+
+// Insert the modifier into the route's processing chain.
+liveRoute.InsertProcessor(0, chordModifier);
+
+Console.WriteLine("Chord Modifier is active. Play single notes on your keyboard to hear major chords.");
+// ... start device and wait for input ...
+```
+
+### Use Case 2: Modifying a Sequenced `MidiTrack`
+
+You can add modifiers to the `Settings` of a `MidiTrack` in a `Composition`. The modifiers will be applied to all MIDI data from that track during playback or rendering.
+
+```csharp
+using SoundFlow.Editing;
+
+// Assuming 'composition' and 'myMidiTrack' are existing instances.
+
+// Create a modifier to transpose the track up by one octave.
+var octaveUpModifier = new TransposeModifier(12);
+
+// Add the modifier to the track's settings.
+myMidiTrack.Settings.AddMidiModifier(octaveUpModifier);
+
+// Now, when the composition is played, all notes from 'myMidiTrack' will be
+// transposed up by 12 semitones before they reach the track's target synthesizer.
+```
+
+---
+
+## 5. Built-in Modifiers
+
+SoundFlow includes a suite of robust, ready-to-use MIDI modifiers in the `SoundFlow.Midi.Modifier` namespace. These cover the most common use cases for MIDI processing.
+
+### Transpose Modifier (`TransposeModifier`)
+Shifts the pitch of incoming `NoteOn` and `NoteOff` messages by a fixed number of semitones. Useful for key changes or octave shifting.
+
+```csharp
+using SoundFlow.Midi.Modifier;
+
+// Shift up by one octave (12 semitones)
+var octaveUp = new TransposeModifier(12);
+
+// Shift down by a perfect fifth (-7 semitones)
+var fifthDown = new TransposeModifier(-7);
+```
+
+### Channel Filter (`ChannelFilterModifier`)
+Acts as a gate, allowing only messages on a specific MIDI channel to pass through. All other messages are dropped. This is essential for complex routing setups where a single stream contains data for multiple instruments.
+
+```csharp
+// Allow only messages on Channel 10 (Drums)
+var drumFilter = new ChannelFilterModifier(10);
+```
+
+### Velocity Processor (`VelocityModifier`)
+Reshapes the dynamic range of a performance by modifying the velocity of `NoteOn` messages.
+
+*   **`MinVelocity` / `MaxVelocity`**: Clamps the output velocity to a specific range.
+*   **`Add`**: Adds a fixed offset to the velocity (can be negative).
+*   **`Curve`**: Applies a non-linear curve to the velocity response.
+*   `0.0`: Linear (1:1).
+*   `> 0.0` (e.g., `0.5`): Exponential. Harder to play loud notes; increases dynamic contrast.
+*   `< 0.0` (e.g., `-0.5`): Logarithmic. Easier to play loud notes; compresses dynamics.
+
+```csharp
+var compressor = new VelocityModifier
+{
+    MinVelocity = 40,  // Raise the noise floor (nothing softer than 40)
+    MaxVelocity = 110, // Cap the ceiling
+    Curve = -0.3f      // Slight logarithmic boost to make it feel "punchier"
+};
+```
+
+### Harmonizer (`HarmonizerModifier`)
+Instantly creates chords from single notes. It listens for `NoteOn` and `NoteOff` messages and generates additional parallel notes based on the specified intervals.
+
+```csharp
+// Create a minor triad (Root + Minor 3rd + Perfect 5th)
+// Intervals are in semitones relative to the root.
+var minorChord = new HarmonizerModifier([0, 3, 7]);
+
+// Create a "Power Chord" (Root + 5th + Octave)
+var powerChord = new HarmonizerModifier([0, 7, 12]);
+```
+
+### Randomizer (`RandomizerModifier`)
+A powerful tool for generative music or humanizing robotic performances. It can introduce probability and variation to note events.
+
+*   **`Chance`**: Probability (0.0-1.0) that a note will play at all.
+*   **`VelocityRandomness`**: Amount of random deviation applied to velocity.
+*   **`PitchRandomness`**: Probability (0.0-1.0) that a note's pitch will be changed.
+*   **`PitchRange`**: The range (+/- semitones) for pitch randomization.
+*   **`MinNote` / `MaxNote`**: Restricts the effect to a specific key range.
+
+```csharp
+var humanizer = new RandomizerModifier
+{
+    Chance = 0.95f,           // 5% chance a note is skipped (ghost notes)
+    VelocityRandomness = 0.2f, // +/- 10% velocity variation
+    VelocityBias = -0.1f       // Tend slightly towards softer velocities
+};
+
+var glitchEffect = new RandomizerModifier
+{
+    PitchRandomness = 0.3f, // 30% chance to glitch the pitch
+    PitchRange = 24         // Jump up to +/- 2 octaves
+};
+```
+
+### Arpeggiator (`ArpeggiatorModifier`)
+A stateful modifier that turns held chords into rhythmic patterns. Because it generates notes over time, it implements the `ITemporalMidiModifier` interface (see below).
+
+*   **`Mode`**: The pattern type (`Up`, `Down`, `UpDown`, `Random`).
+*   **`Rate`**: The step speed relative to the beat (e.g., `0.25` for 1/16th notes).
+*   **`Octaves`**: The number of octaves the pattern spans.
+*   **`Gate`**: The duration of each note as a percentage of the step time (0.0-1.0).
+
+```csharp
+var arp = new ArpeggiatorModifier
+{
+    Mode = ArpMode.UpDown,
+    Octaves = 2,
+    Rate = 0.125, // 1/32nd notes
+    Gate = 0.8    // Staccato feel
+};
+```
+
+## 6. Temporal Modifiers (`ITemporalMidiModifier`)
+
+Standard MIDI modifiers process input messages instantly. However, effects like Arpeggiators or Sequencers need to generate events based on **time**, even when no input messages are being received.
+
+SoundFlow handles this via the `ITemporalMidiModifier` interface.
+
+```csharp
+public interface ITemporalMidiModifier
+{
+    /// <summary>
+    /// Advances the modifier's internal state by a specified duration and returns any generated MIDI messages.
+    /// </summary>
+    /// <param name="deltaSeconds">The time elapsed since the last tick, in seconds.</param>
+    /// <param name="bpm">The current tempo in beats per minute.</param>
+    IEnumerable<MidiMessage> Tick(double deltaSeconds, double bpm);
+}
+```
+
+### How it Works
+1.  **Input Handling:** The modifier still receives standard messages via `Process(message)`. An Arpeggiator, for example, uses `NoteOn` messages to build a buffer of "held notes" but **suppresses** them (returns nothing) so they don't sound immediately.
+2.  **Time Advancement:** The host component (like the `Synthesizer`) calls the `Tick()` method periodically (typically once per audio buffer render).
+3.  **Event Generation:** Inside `Tick()`, the modifier calculates if enough time has passed to trigger the next step in its pattern. If so, it returns new `NoteOn` or `NoteOff` messages, which the host then processes immediately.

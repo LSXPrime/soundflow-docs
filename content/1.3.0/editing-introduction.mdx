@@ -1,0 +1,111 @@
+﻿---
+id: 4
+title: Editing Engine - Introduction
+description: Get a high-level overview of the SoundFlow editing engine, its service-oriented architecture, and the core Composition model for audio and MIDI projects.
+navOrder: 4
+category: Editing
+---
+
+import {Icon} from "@iconify/react";
+import {Card, CardBody, CardHeader} from "@heroui/react";
+
+# Editing Engine: Introduction & Composition Model
+
+SoundFlow features a comprehensive, non-destructive editing engine that can be thought of as a **"DAW in a box"** for developers. It provides a powerful, programmatic core for building applications that need to create, manipulate, and save complex multi-track timelines with both audio and MIDI.
+
+### Key Features of the Editing Engine
+
+*   **Multi-track Audio and MIDI:** Create and manage distinct timelines for both audio clips and MIDI data.
+*   **Non-Destructive Editing:** All operations—such as trimming, splitting, looping, and applying fades—are performed at runtime and never alter the original source files.
+*   **Hierarchical Effects Processing:** Apply effects (`SoundModifier`) and analyzers (`AudioAnalyzer`) at any level: on an individual clip, an entire track, or the master output.
+*   **Advanced Time Manipulation:** Includes high-quality, pitch-preserved time stretching (WSOLA) and classic varispeed (pitch and tempo linked).
+*   **Master Tempo Track:** A global timeline for defining tempo changes, which governs all MIDI and time-based calculations for perfect synchronization.
+*   **Robust Project Persistence:** Save and load entire projects as self-contained `.sfproj` files with sophisticated media management, including consolidation and embedding.
+*   **Real-time MIDI Control:** Link any parameter in your project to a physical MIDI controller for hands-on control via the MIDI Mapping system.
+
+### The New Architecture: A Service-Oriented `Composition`
+
+In version 1.3.0, the `Composition` class was refactored to be the central **data model** of your project. The actual operations—editing, rendering, and recording—are now handled by dedicated service classes, making the architecture cleaner, more powerful, and easier to extend.
+
+When you create a `Composition`, you are creating the heart of your project, which then provides access to these specialized services.
+
+<Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20 my-6">
+    <CardHeader>
+        <div className="flex items-center gap-3">
+            <Icon icon="lucide:info" className="text-primary text-2xl flex-shrink-0" />
+            <h4 className="font-semibold text-lg">`AudioEngine` is Now Required</h4>
+        </div>
+    </CardHeader>
+    <CardBody className="pt-0 text-sm">
+        The `Composition` constructor now requires an `AudioEngine` instance. This is because its internal services (like the `Editor` for loading files or the `Recorder` for interacting with MIDI devices) need the engine context to function.
+    </CardBody>
+</Card>
+
+### The Core Services
+
+Every `Composition` instance exposes four primary service properties. These are your main entry points for interacting with the project.
+
+1.  **`composition.Editor` (`CompositionEditor`)**
+    *   **Role:** The primary service for all **structural changes** to the composition.
+    *   **Use For:** Adding or removing tracks and segments, manipulating the timeline, cutting/splitting/joining clips, editing MIDI notes, and managing the tempo track.
+
+2.  **`composition.Renderer` (`CompositionRenderer`)**
+    *   **Role:** The service responsible for all **audio output**.
+    *   **Use For:**
+        *   **Live Playback:** The `Renderer` is an `ISoundDataProvider` itself, so you pass it to a `SoundPlayer` to hear your entire composition.
+        *   **Offline Rendering:** Use its `Render()` method to "bounce" your project mix to an audio buffer, which you can then save to a file.
+
+3.  **`composition.Recorder` (`CompositionRecorder`)**
+    *   **Role:** The service for managing the entire **MIDI recording workflow**.
+    *   **Use For:** Arming MIDI tracks for recording, starting and stopping the recording process, and configuring advanced features like punch-in/out and overdubbing.
+
+4.  **`composition.MappingManager` (`MidiMappingManager`)**
+    *   **Role:** The service that manages all **real-time MIDI control mappings**.
+    *   **Use For:** Creating, removing, and managing links between your physical MIDI controllers and any controllable parameter within the composition. (See the **[MIDI Control & Mapping](/docs/midi/midi-control-and-mapping)** guide for details).
+
+### Example: Creating a Composition
+
+This example demonstrates the new way to instantiate a `Composition` and access its core services.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Editing;
+using SoundFlow.Structs;
+
+// 1. An AudioEngine instance is now required to create a composition.
+// The engine provides the context for services like file loading and MIDI device access.
+using var engine = new MiniAudioEngine();
+
+// 2. Define the target audio format for the project.
+var format = AudioFormat.DvdHq;
+
+// 3. Create the Composition.
+// It acts as the central data model for your project.
+var composition = new Composition(engine, format, "My New Project");
+
+// 4. Access the dedicated services to interact with the composition.
+
+// Use the Editor to make structural changes.
+Console.WriteLine($"Accessing the editor: {composition.Editor.GetType().Name}");
+// e.g., composition.Editor.AddTrack(new Track("My Audio Track"));
+
+// Use the Renderer for playback.
+Console.WriteLine($"Accessing the renderer: {composition.Renderer.GetType().Name}");
+// e.g., var player = new SoundPlayer(engine, format, composition.Renderer);
+
+// Use the Recorder to manage MIDI recording.
+Console.WriteLine($"Accessing the recorder: {composition.Recorder.GetType().Name}");
+// e.g., composition.Recorder.ArmTrackForRecording(myMidiTrack, myMidiInputDevice);
+
+// Use the MappingManager to set up real-time control.
+Console.WriteLine($"Accessing the mapping manager: {composition.MappingManager.GetType().Name}");
+// e.g., composition.MappingManager.AddMapping(myMidiMapping);
+
+// ... build your project using these services ...
+
+// Remember to dispose the composition to release its resources.
+composition.Dispose();
+```
+
+With this foundational understanding, you can now explore the specific guides for working with audio tracks, MIDI tracks, playback, and persistence.

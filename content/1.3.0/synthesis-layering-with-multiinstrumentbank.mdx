@@ -1,0 +1,142 @@
+﻿---
+id: 20
+title: Layering with MultiInstrumentBank
+description: Learn how to layer multiple instrument banks to create complex, layered sounds or custom fallback behaviors using the MultiInstrumentBank.
+navOrder: 20
+category: Synthesis
+---
+
+# Layering with MultiInstrumentBank
+
+The `MultiInstrumentBank` (`SoundFlow.Synthesis.Banks.MultiInstrumentBank`) is a powerful container that allows you to manage and prioritize a collection of `IInstrumentBank` instances. It acts as a high-level bank that queries its child banks in a specific order, enabling sophisticated instrument layering and custom fallback behaviors.
+
+## Core Concept: Prioritized Searching
+
+When the `Synthesizer` requests an instrument from a `MultiInstrumentBank`, the `MultiInstrumentBank` searches through its list of child banks in **reverse order of how they were added**. The last bank added has the highest priority.
+
+The search follows these rules:
+1.  It asks the highest-priority bank for the requested instrument (bank/program).
+2.  If that bank returns a valid, non-fallback `Instrument`, that instrument is used immediately, and the search stops.
+3.  If that bank returns an instrument marked as a `fallback`, the `MultiInstrumentBank` ignores it and proceeds to query the next-lower-priority bank.
+4.  This process continues until a non-fallback instrument is found.
+5.  If no non-fallback instrument is found after checking all child banks, the `MultiInstrumentBank` returns its own master fallback instrument.
+
+This priority system allows you to **override** sounds. For example, you can load a large General MIDI SoundFont as a base layer (low priority) and then add a smaller bank with a few high-quality, custom synth patches on top (high priority). If a MIDI Program Change message requests a program that exists in your custom bank, it will be used; otherwise, the request will "fall through" to the General MIDI SoundFont.
+
+## Complete Example: Layering a SoundFont and a Basic Synth Bank
+
+This example demonstrates how to create a `MultiInstrumentBank` to layer a custom synthesizer patch on top of a full SoundFont bank. We will override the "Acoustic Grand Piano" (Program 0) from the SoundFont with a custom electric piano sound from `BasicInstrumentBank`.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.Structs;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using SoundFlow.Synthesis.Instruments;
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading;
+
+public static class Program
+{
+    public static void Main()
+    {
+        Console.WriteLine("MultiInstrumentBank Layering Example");
+
+        var soundFontPath = @"C:\path\to\your\soundfont.sf2";
+        if (!File.Exists(soundFontPath))
+        {
+            Console.WriteLine($"Error: SoundFont file not found at '{soundFontPath}'.");
+            return;
+        }
+
+        // 1. Standard engine and device setup
+        using var engine = new MiniAudioEngine();
+        var format = AudioFormat.DvdHq;
+        using var device = engine.InitializePlaybackDevice(null, format);
+
+        // 2. Create the individual instrument banks
+        Console.WriteLine("Loading instrument banks...");
+        // Bank 1: The large SoundFont (will have lower priority)
+        using var soundFontBank = new SoundFontBank(soundFontPath, format);
+        // Bank 2: Our simple synth bank (will have higher priority)
+        var basicSynthBank = new BasicInstrumentBank(format);
+
+        // 3. Create the master fallback instrument. This will be used if a sound is in neither bank.
+        var masterFallbackDef = new VoiceDefinition(format, SoundFlow.Components.Oscillator.WaveformType.Triangle, 1, 0, 0.1f, 0.1f, 1.0f, 0.1f);
+        var masterFallbackInstrument = new Instrument([], masterFallbackDef, isFallback: true);
+
+        // 4. Create and populate the MultiInstrumentBank
+        using var multiBank = new MultiInstrumentBank(masterFallbackInstrument); // The MultiInstrumentBank is also IDisposable to manage its child banks.
+
+        // Add the SoundFont bank first (it will have lower priority)
+        multiBank.AddBank(soundFontBank);
+        Console.WriteLine($"Added '{Path.GetFileName(soundFontPath)}' as the base layer.");
+
+        // Add the basic synth bank second (it will have higher priority)
+        multiBank.AddBank(basicSynthBank);
+        Console.WriteLine("Added 'BasicInstrumentBank' as the override layer.");
+
+        // 5. Create the Synthesizer with the MultiInstrumentBank
+        var synthesizer = new Synthesizer(engine, format, multiBank);
+
+        // 6. Add to mixer and start device
+        device.MasterMixer.AddComponent(synthesizer);
+        device.Start();
+
+        // Test the override
+
+        Console.WriteLine("\n--- Playing Program 0 (Acoustic Grand Piano) ---");
+        // We send a Program Change for program 0.
+        // The MultiInstrumentBank will first check 'basicSynthBank'.
+        // 'basicSynthBank' HAS an instrument for program 0 (the electric piano).
+        // Since it's not a fallback, it will be used, and the SoundFont's piano will be ignored.
+        synthesizer.ProcessMidiMessage(new MidiMessage(0xC0, 0, 0)); // Program Change to 0 on Channel 1
+
+        // Play a chord
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 60, 100));
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 64, 100));
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 67, 100));
+        Console.WriteLine("You should hear the electric piano from BasicInstrumentBank.");
+        Thread.Sleep(3000);
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 60, 0));
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 64, 0));
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 67, 0));
+        Thread.Sleep(1000);
+
+        // Test the fallback
+
+        Console.WriteLine("\n--- Playing Program 10 (Music Box) ---");
+        // We send a Program Change for program 10.
+        // MultiInstrumentBank checks 'basicSynthBank'. It also has an instrument for program 10, so it will be used.
+        synthesizer.ProcessMidiMessage(new MidiMessage(0xC0, 10, 0));
+
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 72, 120));
+        Console.WriteLine("You should hear the Music Box synth from BasicInstrumentBank.");
+        Thread.Sleep(2000);
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 72, 0));
+        Thread.Sleep(1000);
+
+        Console.WriteLine("\n--- Playing a program that only exists in the SoundFont (e.g., Program 5) ---");
+        // We send a Program Change for program 5.
+        // MultiInstrumentBank checks 'basicSynthBank'. It does NOT have an instrument for program 5. It returns its fallback.
+        // Because it was a fallback, MultiInstrumentBank continues and checks 'soundFontBank'.
+        // Assuming the SoundFont has an instrument for program 5, it will be returned and used.
+        synthesizer.ProcessMidiMessage(new MidiMessage(0xC0, 5, 0));
+
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 65, 100));
+        Console.WriteLine("You should hear the instrument for Program 5 from your SoundFont file.");
+        Thread.Sleep(2000);
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 65, 0));
+        Thread.Sleep(1000);
+
+        // 7. Clean up
+        device.Stop();
+        synthesizer.Dispose();
+    }
+}
+```
+
+This example clearly illustrates the power of the `MultiInstrumentBank`. It provides a clean, predictable way to combine multiple sound sources, allowing you to build up a custom sound library by layering different banks and overriding specific instruments where needed.

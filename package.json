@@ -17,13 +17,17 @@
     "@tailwindcss/typography": "^0.5.16",
     "flexsearch": "^0.8.205",
     "framer-motion": "^12.23.6",
-    "gray-matter": "^4.0.3",
+    "gray-matter": "^2.0.1",
+    "katex": "^0.16.25",
+    "mermaid": "^11.12.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.3",
-    "react-syntax-highlighter": "^15.6.1",
+    "react-syntax-highlighter": "^16.1.0",
+    "rehype-katex": "^7.0.1",
     "remark-frontmatter": "^5.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",

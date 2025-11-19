@@ -1,0 +1,159 @@
+﻿---
+id: 19
+title: SoundFont (.sf2) Support
+description: A practical guide to loading and using industry-standard SoundFont 2 files as instruments within the SoundFlow synthesizer.
+navOrder: 19
+category: Synthesis
+---
+
+import {Icon} from "@iconify/react";
+
+# SoundFont (.sf2) Support
+
+SoundFlow v1.3.0 includes robust support for the industry-standard **SoundFont 2 (.sf2)** file format. This allows you to load vast libraries of high-quality, multi-sampled instruments and use them directly within the `Synthesizer` component. This feature is enabled by the `SoundFontBank` class.
+
+## What is a SoundFont?
+
+A SoundFont is a standardized file format that bundles everything needed for a sample-based instrument bank:
+*   **PCM Audio Samples:** The raw audio recordings of notes.
+*   **Instrument Definitions:** Defines how samples are mapped across the keyboard (key splits) and respond to velocity (velocity layers).
+*   **Modulators & Generators:** A complex system of parameters that define envelopes (ADSR), filters, LFOs, and other synthesis properties for each sample.
+*   **Preset Hierarchy:** Organizes instruments into banks and programs, matching the MIDI specification for instrument selection.
+
+The `SoundFontBank` class parses this entire structure, converting it into SoundFlow's native `Instrument` model.
+
+## The `SoundFontBank` Class
+
+The `SoundFontBank` (`SoundFlow.Synthesis.Banks.SoundFontBank`) is a concrete implementation of the `IInstrumentBank` interface. It is the bridge between the SF2 file format and the SoundFlow synthesis engine.
+
+*   **Constructor:** `public SoundFontBank(string filePath, AudioFormat format)`
+    When you create a `SoundFontBank`, it performs several intensive one-time operations:
+    1.  It opens and reads the `.sf2` file stream.
+    2.  It parses all metadata chunks (presets, instruments, zones, generators, and sample headers).
+    3.  It reads the raw sample data.
+    4.  It **resamples** all audio samples from their original sample rate to match the `AudioFormat` of your engine. This is crucial for high-quality, pitch-accurate playback and is done upfront for performance.
+*   **`IDisposable`:** The `SoundFontBank` holds an open file stream to the `.sf2` file, so it must be disposed of properly (e.g., with a `using` statement) to release the file handle.
+
+### Listing Available Presets
+
+A key feature of the `SoundFontBank` is its ability to enumerate all the presets contained within the file, which is essential for building a UI for instrument selection.
+
+*   **`AvailablePresets` Property:** A `IReadOnlyList<PresetInfo>` that contains information for every preset in the SoundFont.
+*   **`PresetInfo` Record:** A simple record struct with three properties:
+    *   `int Bank`: The MIDI bank number.
+    *   `int Program`: The MIDI program number (0-127).
+    *   `string Name`: The human-readable name of the preset (e.g., "Acoustic Grand Piano").
+
+## Complete Example: Loading and Playing a SoundFont
+
+This example demonstrates the full workflow: loading an SF2 file, listing its presets, selecting an instrument, and playing it with the `Synthesizer`.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.Structs;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading;
+
+public static class Program
+{
+    public static void Main()
+    {
+        Console.WriteLine("SoundFont Bank Example");
+
+        // Replace with the path to a SoundFont file on your system.
+        var soundFontPath = @"C:\path\to\your\soundfont.sf2";
+        if (!File.Exists(soundFontPath))
+        {
+            Console.WriteLine($"Error: SoundFont file not found at '{soundFontPath}'.");
+            return;
+        }
+
+        // 1. Standard engine and device setup
+        using var engine = new MiniAudioEngine();
+        var format = AudioFormat.DvdHq;
+        using var device = engine.InitializePlaybackDevice(null, format);
+
+        // 2. Load the .sf2 file into a SoundFontBank. This can take a moment.
+        Console.WriteLine($"Loading SoundFont: {Path.GetFileName(soundFontPath)}...");
+        using var soundFontBank = new SoundFontBank(soundFontPath, format);
+        Console.WriteLine("SoundFont loaded successfully.");
+
+        // 3. List the available presets.
+        Console.WriteLine("\n--- Available Presets ---");
+        foreach (var preset in soundFontBank.AvailablePresets)
+        {
+            Console.WriteLine($"Bank: {preset.Bank}, Program: {preset.Program}, Name: {preset.Name}");
+        }
+
+        // 4. Create a Synthesizer and give it the loaded bank.
+        var synthesizer = new Synthesizer(engine, format, soundFontBank);
+
+        // 5. Add the synthesizer to the mixer and start the device.
+        device.MasterMixer.AddComponent(synthesizer);
+        device.Start();
+
+        // Select an instrument and play it
+
+        // Let's choose the first available preset.
+        var presetToPlay = soundFontBank.AvailablePresets.FirstOrDefault();
+        if (presetToPlay == null)
+        {
+            Console.WriteLine("No presets found in the SoundFont.");
+            return;
+        }
+
+        Console.WriteLine($"\nSelecting preset: '{presetToPlay.Name}' (Bank: {presetToPlay.Bank}, Program: {presetToPlay.Program})");
+
+        int channel = 1; // MIDI Channel 1
+
+        // Bank Select MSB (CC 0)
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0xB0 + channel - 1), 0, (byte)(presetToPlay.Bank / 128)));
+        // Bank Select LSB (CC 32)
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0xB0 + channel - 1), 32, (byte)(presetToPlay.Bank % 128)));
+
+        // Program Change
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0xC0 + channel - 1), (byte)presetToPlay.Program, 0));
+
+        Console.WriteLine("Playing a C Major chord...");
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0x90 + channel - 1), 60, 100)); // C4
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0x90 + channel - 1), 64, 100)); // E4
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0x90 + channel - 1), 67, 100)); // G4
+
+        Thread.Sleep(3000); // Hold the chord
+
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0x80 + channel - 1), 60, 0));
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0x80 + channel - 1), 64, 0));
+        synthesizer.ProcessMidiMessage(new MidiMessage((byte)(0x80 + channel - 1), 67, 0));
+
+        Console.WriteLine("Playback finished.");
+        Thread.Sleep(1000);
+
+        // 6. Clean up
+        device.Stop();
+        synthesizer.Dispose();
+    }
+}
+```
+
+## Using SoundFonts with a Sequencer
+
+The `SoundFontBank` integrates seamlessly with the `Sequencer` component, allowing you to create a powerful standalone MIDI file player that uses high-quality sampled instruments. Simply replace the `BasicInstrumentBank` in the `Sequencer` example with a `SoundFontBank`.
+
+```csharp
+// In the Sequencer example...
+
+// using var instrumentBank = new BasicInstrumentBank(format);
+// BECOMES:
+using var instrumentBank = new SoundFontBank("path/to/your/soundfont.sf2", format);
+
+// The rest of the code remains the same.
+var synthesizer = new Synthesizer(engine, format, instrumentBank);
+var sequencer = new Sequencer(engine, format, midiDataProvider, synthesizer);
+// ...
+```
+The `Sequencer` will play the MIDI file, sending Program Change and Bank Select messages from the file to the `Synthesizer`, which will then load the correct instruments from your SoundFont.

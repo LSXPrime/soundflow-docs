@@ -20,7 +20,7 @@ function App() {
                 <Routes>
                   <Route path="/" element={<Layout />}>
                     <Route index element={<HomePage />} />
-                    <Route path="docs" element={<Navigate to="/docs/v1.2.0/" replace />} />
+                    <Route path="docs" element={<Navigate to="/docs/v1.3.0/" replace />} />
                     <Route path="docs/:version/*" element={<DocsPage key={location.pathname} />} />
                     <Route path="*" element={<NotFoundPage />} />
                   </Route>

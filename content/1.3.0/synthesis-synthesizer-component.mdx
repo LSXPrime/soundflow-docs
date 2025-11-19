@@ -1,0 +1,178 @@
+﻿---
+id: 14
+title: The Synthesizer Component
+description: A comprehensive guide to the core Synthesizer component, its architecture, how it generates sound from MIDI, and its role in the audio graph.
+navOrder: 14
+category: Synthesis
+---
+
+import {Icon} from "@iconify/react";
+
+# The Synthesizer Component
+
+The `Synthesizer` (`SoundFlow.Synthesis.Synthesizer`) is a new, fundamental `SoundComponent` introduced in SoundFlow v1.3.0. It serves as a powerful, polyphonic, and multi-timbral sound source capable of generating complex audio from MIDI messages. It can be thought of as a virtual instrument or a software synthesizer that lives within your SoundFlow audio graph.
+
+## Features
+
+*   **Polyphonic & Multi-timbral:** The synthesizer can play multiple notes simultaneously (polyphony) and can respond to all 16 MIDI channels independently, playing a different instrument on each channel (multi-timbrality).
+*   **Extensible Instrument Model:** It does not produce sound on its own but relies on a pluggable `IInstrumentBank` to source its sounds. This allows you to load instruments from various sources, including built-in basic synths or complex sample libraries like SoundFonts.
+*   **MIDI Controllable:** As an implementation of `IMidiControllable`, it is the primary target for MIDI data from a `Sequencer`, a live `MidiInputDevice`, or programmatic MIDI messages.
+*   **MPE (MIDI Polyphonic Expression) Support:** The synthesizer can be switched into MPE mode to respond to per-note expression data from compatible controllers, allowing for incredibly nuanced performances.
+*   **Standard `SoundComponent`:** It inherits from `SoundComponent`, meaning it integrates seamlessly into the audio graph. You can connect its output to `Mixer`s and apply `SoundModifier`s and `AudioAnalyzer`s to it just like any other audio source.
+
+## Core Concepts
+
+The `Synthesizer` is a `SoundComponent`, so it must be added to a `Mixer` (typically a device's `MasterMixer`) to be heard. Its `GenerateAudio` method is called on the high-priority audio thread, where it renders the audio for all its currently active voices.
+
+Crucially, it is also an `IMidiControllable`. Its `ProcessMidiMessage` method is the entry point for all MIDI data. This method is thread-safe and can be called from any thread (e.g., the UI thread for programmatic notes, or a MIDI backend's thread for live input) to control the synthesizer in real-time.
+
+## Internal MIDI Effects & Temporal Processing
+
+The `Synthesizer` includes a built-in MIDI processing pipeline that sits before the voice generation stage. This allows you to attach MIDI effects—including time-based effects like Arpeggiators—directly to the synth.
+
+### Managing the Modifier Chain
+
+You can dynamically add, remove, or reorder modifiers using the following methods:
+
+*   **`AddMidiModifier(MidiModifier modifier)`**: Adds an effect to the end of the chain.
+*   **`RemoveMidiModifier(MidiModifier modifier)`**: Removes an effect from the chain.
+*   **`MidiModifiers`**: A read-only property exposing the current list of modifiers.
+
+```csharp
+// Create an Arpeggiator
+var arp = new ArpeggiatorModifier { Mode = ArpMode.Up, Rate = 0.25 };
+
+// Attach it to the synthesizer
+synthesizer.AddMidiModifier(arp);
+
+// Later, you can disable it non-destructively
+arp.IsEnabled = false;
+```
+
+### Temporal Processing & BPM
+
+A unique feature of the `Synthesizer` is its automatic handling of `ITemporalMidiModifier` instances.
+
+When you add a modifier that implements `ITemporalMidiModifier` (like the `ArpeggiatorModifier`), the `Synthesizer` automatically drives it using the audio thread's clock.
+
+1.  **BPM Control:** The `Synthesizer` has a **`Bpm`** property (float, default 120). This sets the tempo for all attached temporal modifiers.
+2.  **Sample-Accurate Timing:** Inside the `Synthesizer.GenerateAudio` loop, the synth calculates the exact duration of the audio buffer it is about to render.
+3.  **The Tick Loop:** It calls the `Tick(duration, Bpm)` method on all temporal modifiers.
+4.  **Event Injection:** Any MIDI messages returned by the `Tick` method (e.g., the Arpeggiator deciding it's time to play the next note) are immediately injected into the sound generation engine for the current audio buffer.
+
+This ensures that arpeggiators and sequencers running inside the `Synthesizer` stay perfectly synchronized with the audio render clock, free from the jitter often associated with thread-based timers.
+
+```csharp
+// Set the tempo for the internal arpeggiator
+synthesizer.Bpm = 140;
+```
+
+## Getting Started: Playing Your First Synthesized Note
+
+This example demonstrates the most basic usage: creating a synthesizer, giving it a simple instrument bank, and playing a note programmatically.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.Structs;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using System.Linq;
+using System.Threading;
+
+public static class Program
+{
+    public static void Main()
+    {
+        Console.WriteLine("Synthesizer Basic Usage Example");
+
+        // 1. Initialize the audio engine and a playback device.
+        using var engine = new MiniAudioEngine();
+        var format = AudioFormat.DvdHq;
+        using var device = engine.InitializePlaybackDevice(null, format); // Use default device
+
+        // 2. Create an Instrument Bank.
+        // The BasicInstrumentBank provides a few simple, hardcoded synth sounds.
+        var instrumentBank = new BasicInstrumentBank(format);
+
+        // 3. Create the Synthesizer instance.
+        // It requires the engine, format, and an instrument bank.
+        var synthesizer = new Synthesizer(engine, format, instrumentBank);
+
+        // 4. Add the synthesizer to the device's master mixer to make it audible.
+        device.MasterMixer.AddComponent(synthesizer);
+
+        // 5. Start the audio device's processing thread.
+        device.Start();
+        Console.WriteLine($"Audio device '{device.Info?.Name}' started.");
+
+        // Playing Notes Programmatically
+
+        // A Note On message: Command 0x90, Channel 1, Note 60 (Middle C), Velocity 127
+        var noteOn = new MidiMessage(0x90, 60, 127);
+        // A Note Off message for the same note
+        var noteOff = new MidiMessage(0x80, 60, 0);
+
+        Console.WriteLine("\nPlaying Middle C (Note 60)...");
+        synthesizer.ProcessMidiMessage(noteOn);
+        Thread.Sleep(1000); // Hold the note for 1 second
+        synthesizer.ProcessMidiMessage(noteOff);
+        Console.WriteLine("Note Off sent.");
+        Thread.Sleep(1000); // Wait for the release tail to fade out
+
+        // Switching Instruments
+
+        // A Program Change message for Channel 1, Program 80 (Lead Synth in BasicInstrumentBank)
+        var programChange = new MidiMessage(0xC0, 80, 0);
+
+        Console.WriteLine("\nSwitching to Program 80 (Lead Synth)...");
+        synthesizer.ProcessMidiMessage(programChange);
+
+        Console.WriteLine("Playing a higher note (A4, Note 69)...");
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 69, 110));
+        Thread.Sleep(1000);
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 69, 0));
+        Console.WriteLine("Note Off sent.");
+        Thread.Sleep(1000);
+
+        // 6. Clean up.
+        device.Stop();
+        synthesizer.Dispose();
+    }
+}
+```
+
+## Key Properties & Methods
+
+### `MpeEnabled`
+```csharp
+public bool MpeEnabled { get; set; }
+```
+Gets or sets whether the synthesizer operates in MPE (MIDI Polyphonic Expression) mode. When `false` (the default), it operates as a standard multi-timbral instrument. When `true`, it interprets incoming MIDI according to MPE specifications, allowing for per-note expression.
+
+<div className="flex items-center gap-3 my-4 p-4 rounded-lg bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+    <Icon icon="lucide:info" className="text-primary text-2xl flex-shrink-0" />
+    <p className="text-sm">
+        Switching this property will trigger an "All Notes Off" command internally to prevent stuck notes that might occur from changing the voice allocation logic. For a detailed guide, see the **<a href="/docs/synthesis/mpe-support">MPE Support</a>** page.
+    </p>
+</div>
+
+### `ProcessMidiMessage(MidiMessage message)`
+```csharp
+public void ProcessMidiMessage(MidiMessage message)
+```
+This is the primary method for controlling the synthesizer. It accepts a `MidiMessage` struct and routes it to the correct internal `MidiChannel` based on the message's channel, which then triggers the appropriate action (Note On, Note Off, parameter change, etc.). This method is thread-safe.
+
+### `Reset()`
+```csharp
+public void Reset()
+```
+Immediately resets the synthesizer to a clean state. This action performs the following on all 16 MIDI channels:
+*   Kills all currently sounding voices with a very fast fade-out to prevent clicks.
+*   Resets all channel parameters (Volume, Pan, Pitch Bend, etc.) to their default values.
+*   Resets the selected instrument on each channel to the default (Bank 0, Program 0).
+
+This is useful for clearing the synthesizer's state after stopping playback or when loading a new song.
+
+### `ProcessMpeEvent(object mpeEvent)` (Internal)
+This method is designed for internal use by the `MidiManager`. When a device is configured for MPE, the `MidiManager`'s internal `MpeParser` translates the raw MIDI stream into higher-level MPE event objects. The `MidiManager` then calls this method to deliver these events to the synthesizer, which routes them to the correct active voice for per-note expression. You should not call this method directly.

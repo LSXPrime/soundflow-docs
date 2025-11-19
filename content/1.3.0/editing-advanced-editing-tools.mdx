@@ -1,0 +1,96 @@
+---
+id: 4.5
+title: Editing - Advanced Editing Tools
+description: Discover advanced editing operations for both audio and MIDI, including quantization, structural editing, and file export.
+navOrder: 4.5
+category: Editing
+---
+
+import {Icon} from "@iconify/react";
+
+# Advanced Editing Tools
+
+The `composition.Editor` provides a suite of powerful methods for complex, non-destructive editing of both audio and MIDI data. This guide covers utilities for quantization, structural timeline manipulation, and exporting MIDI data.
+
+## Structural Audio Editing
+
+These operations allow you to modify the arrangement of `AudioSegment`s on a track's timeline.
+
+*   **`Editor.InsertSegment(Track track, TimeSpan insertionPoint, AudioSegment segment, bool shiftFollowing = true)`**
+    Inserts a segment at a specific time. If `shiftFollowing` is true, all subsequent segments on the track are pushed forward to make room.
+
+*   **`Editor.RemoveSegment(Track track, AudioSegment segment, bool shiftFollowing = true)`**
+    Removes a segment. If `shiftFollowing` is true, all subsequent segments are pulled back to close the gap.
+
+*   **`Editor.SilenceSegment(Track track, TimeSpan startTime, TimeSpan duration)`**
+    A powerful non-destructive operation that silences a region of a track. It intelligently:
+    *   Removes any segments fully contained within the silenced range.
+    *   Trims the end of any segment that overlaps the start of the range.
+    *   Trims the start of any segment that overlaps the end of the range.
+    *   Splits any segment that fully spans the silenced range into two pieces.
+    *   Inserts a new, silent `AudioSegment` to fill the gap, ensuring timeline integrity.
+
+## MIDI Quantization
+
+Quantization is the process of aligning MIDI notes to a specific rhythmic grid. SoundFlow provides a flexible, non-destructive quantization utility.
+
+*   **`MidiQuantizer`:** A static utility class that contains the core quantization logic.
+*   **`QuantizationSettings`:** A record that defines the parameters for the operation:
+    *   `Grid`: The rhythmic grid to align to (e.g., `SixteenthNote`, `EighthTriplet`).
+    *   `Strength`: A value from `0.0` to `1.0` that controls how strongly notes are pulled to the grid. `1.0` is perfect alignment.
+    *   `Swing`: A value from `0.0` to `1.0` that shifts every second beat on the grid forward, creating a "swing" feel. `0.5` is no swing.
+    *   `QuantizeNoteEnd`: A boolean to control whether the end of the note is also aligned to the grid.
+
+### Example: Applying Quantization
+
+You apply quantization to a `MidiSegment` using the `composition.Editor`.
+
+```csharp
+using SoundFlow.Editing;
+
+// Assuming 'composition' and 'myMidiSegment' exist.
+
+// Define quantization settings:
+// - Align to the 16th note grid.
+// - Apply 85% of the correction (not perfectly rigid).
+// - Add a light swing feel.
+var settings = new QuantizationSettings
+{
+    Grid = QuantizationSettings.GridInterval.SixteenthNote,
+    Strength = 0.85,
+    Swing = 0.55
+};
+
+// Apply the quantization. This modifies the note data within the segment's MidiSequence.
+composition.Editor.QuantizeSegment(myMidiSegment, settings);
+```
+
+## Structural MIDI Editing
+
+The editor also provides methods for splitting and joining MIDI segments.
+
+*   **`Editor.SplitMidiSegment(MidiTrack track, MidiSegment segment, TimeSpan splitTime)`**
+    Splits a single `MidiSegment` into two new segments at the specified timeline position. Any notes that cross the split point are also intelligently split. The original segment is removed.
+
+*   **`Editor.JoinMidiSegments(MidiTrack track, IEnumerable<MidiSegment> segments)`**
+    Merges multiple `MidiSegment`s on the same track into a single new `MidiSegment`. The segments are joined based on their timeline positions, and their MIDI data is merged into a single `MidiSequence`. The original segments are removed.
+
+## MIDI File Export
+
+You can export all MIDI data from your composition (including all tracks and the master tempo map) into a standard `.mid` file (Format 1). This is useful for interoperability with other DAWs or MIDI software.
+
+The `composition.Editor.ExportMidiAsync()` method handles the entire process.
+
+```csharp
+using SoundFlow.Editing;
+using System.Threading.Tasks;
+
+public async Task ExportMidi(Composition composition, string outputFilePath)
+{
+    // This will create a Format 1 Standard MIDI File containing all MIDI tracks
+    // and a conductor track with all the tempo changes from the master TempoTrack.
+    await composition.Editor.ExportMidiAsync(outputFilePath);
+
+    Console.WriteLine($"MIDI data successfully exported to {outputFilePath}");
+}
+```

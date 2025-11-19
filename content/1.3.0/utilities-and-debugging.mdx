@@ -1,0 +1,197 @@
+﻿---
+id: 13.8
+title: Utilities & Debugging
+description: A guide to the essential utility classes in SoundFlow, including centralized logging, high-performance channel mixing, and signal processing math helpers.
+navOrder: 13.8
+category: Core
+---
+
+# Utilities & Debugging
+
+The `SoundFlow.Utils` namespace provides critical infrastructure for debugging your application and performing high-performance audio manipulation. While many of these tools are used internally by the engine, they are exposed publicly to help you build robust, optimized audio applications.
+
+## Centralized Logging (`Log`)
+
+SoundFlow v1.3 introduces a completely decoupled, centralized logging system. The library no longer writes directly to `Console.WriteLine`. Instead, it routes all diagnostic messages through the static `SoundFlow.Utils.Log` class.
+
+To receive error messages, warnings, or debug information from the internal engine (such as Codec loading failures or MIDI device connection errors), you **must** subscribe to the `Log.OnLog` event.
+
+### Log Levels
+
+The system uses the `LogLevel` enumeration to categorize messages:
+
+| Level       | Description                                                                                                                                    |
+|:------------|:-----------------------------------------------------------------------------------------------------------------------------------------------|
+| **Debug**   | Detailed information intended for development and deep debugging. (e.g., "Loaded chunk X from file").                                          |
+| **Info**    | General informational messages about the library's operation (e.g., "PortMidi backend enabled").                                               |
+| **Warning** | Indicates a potential issue that does not prevent the operation from completing but may lead to unexpected behavior (e.g., "Frame truncated"). |
+| **Error**   | Indicates a definite error that has occurred, often preceding an Exception (e.g., "Failed to initialize device").                              |
+
+### Usage Example
+
+This example demonstrates how to route SoundFlow logs to the System Console. In a GUI application (WPF/Avalonia/WinForms), you would route these strings to a text box or a log file.
+
+```csharp
+using SoundFlow.Utils;
+
+public static void Main()
+{
+    // 1. Subscribe to the static event BEFORE initializing the engine.
+    Log.OnLog += HandleSoundFlowLog;
+
+    // 2. Initialize your engine (logs will now be captured)
+    using var engine = new MiniAudioEngine();
+
+    // ... application logic ...
+}
+
+// The event handler receives the severity level and the message string.
+private static void HandleSoundFlowLog(LogLevel level, string message)
+{
+    // Optional: Color code the output based on severity
+    switch (level)
+    {
+        case LogLevel.Error:
+            Console.ForegroundColor = ConsoleColor.Red;
+            break;
+        case LogLevel.Warning:
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            break;
+        case LogLevel.Info:
+            Console.ForegroundColor = ConsoleColor.White;
+            break;
+        case LogLevel.Debug:
+            Console.ForegroundColor = ConsoleColor.Gray;
+            break;
+    }
+
+    Console.WriteLine($"[{level}] {message}");
+    Console.ResetColor();
+}
+```
+
+## High-Performance Channel Mixing (`ChannelMixer`)
+
+The `SoundFlow.Utils.ChannelMixer` is a static utility class designed for extremely efficient upmixing, downmixing, and channel interleaving of raw audio buffers.
+
+Unlike simple `for` loops, this class leverages **SIMD (Single Instruction, Multiple Data)** instructions—specifically **AVX** and **SSE**—to process multiple samples in parallel. This is critical for performance when handling multi-channel surround sound or processing large blocks of audio data.
+
+### Key Features
+
+*   **Automatic SIMD Optimization:** Automatically detects CPU capabilities and uses AVX2, AVX, SSE3, or SSE paths where available.
+*   **Upmixing:** Intelligently distributes mono signals to stereo or multi-channel buffers.
+*   **Downmixing:** Sums multi-channel signals down to mono.
+*   **General Mixing:** Handles arbitrary channel count conversions (e.g., 5.1 Surround to Stereo).
+
+### API Reference
+
+#### `Mix`
+```csharp
+public static float[] Mix(float[] samples, int sourceChannels, int targetChannels)
+```
+Creates a *new* float array containing the mixed audio.
+*   **samples**: The source audio buffer (interleaved).
+*   **sourceChannels**: The number of channels in the source buffer.
+*   **targetChannels**: The desired number of channels in the output.
+
+#### Configuration Properties
+You can manually disable specific SIMD instruction sets if necessary (e.g., for benchmarking or compatibility testing). Defaults to `true`.
+*   `public static bool EnableAvx { get; set; }`
+*   `public static bool EnableSse { get; set; }`
+
+### Usage Example
+
+```csharp
+using SoundFlow.Utils;
+
+// Imagine we have a buffer of 5.1 Surround Sound audio (6 channels).
+// 100 frames * 6 channels = 600 samples.
+float[] surroundBuffer = GetSurroundData();
+int sourceChannels = 6;
+
+// We want to downmix this to Stereo (2 channels) for headphone playback.
+int targetChannels = 2;
+
+try
+{
+    // Perform the mix. This will use AVX/SSE acceleration to sum
+    // the channels efficiently.
+    float[] stereoBuffer = ChannelMixer.Mix(surroundBuffer, sourceChannels, targetChannels);
+
+    Console.WriteLine($"Input size: {surroundBuffer.Length}"); // 600
+    Console.WriteLine($"Output size: {stereoBuffer.Length}");  // 200 (100 frames * 2 channels)
+}
+catch (ArgumentException ex)
+{
+    // Thrown if the input buffer length is not a multiple of sourceChannels
+    Console.WriteLine($"Mixing error: {ex.Message}");
+}
+```
+
+## Audio Math Helpers (`MathHelper`)
+
+The `SoundFlow.Utils.MathHelper` class exposes the optimized mathematical functions used internally by the engine's DSP components. These are useful if you are writing your own custom `SoundModifier` or `AudioAnalyzer`.
+
+### Fast Fourier Transform (FFT)
+
+SoundFlow includes a highly optimized, SIMD-accelerated FFT implementation.
+
+*   **`void Fft(Complex[] data)`**: Performs an in-place Fast Fourier Transform. The input length must be a power of two.
+*   **`void InverseFft(Complex[] data)`**: Performs an in-place Inverse Fast Fourier Transform (IFFT).
+
+### Offline Resampling
+
+While the `ResamplerModifier` is for real-time processing, `MathHelper` provides a utility for "one-shot" offline resampling of arrays. This affects both pitch and speed (varispeed).
+
+*   **`float[] ResampleLinear(float[] inputData, int channels, int sourceRate, int targetRate)`**
+*   Creates a new array with the audio resampled to the target rate using linear interpolation.
+*   This is useful for converting loaded assets to the engine's sample rate before playback to avoid real-time resampling overhead.
+
+```csharp
+using SoundFlow.Utils;
+
+// Load raw audio data (e.g., 44.1kHz)
+float[] originalAudio = LoadAudioData();
+int originalRate = 44100;
+
+// The engine is running at 48kHz. Resample the asset upfront.
+int targetRate = 48000;
+int channels = 2;
+
+float[] readyToPlayAudio = MathHelper.ResampleLinear(originalAudio, channels, originalRate, targetRate);
+```
+
+### Windowing Functions
+
+Useful for spectral analysis (FFT) to reduce spectral leakage.
+*   **`float[] HammingWindow(int size)`**
+*   **`float[] HanningWindow(int size)`**
+
+## Format Helper Extensions
+
+The `AudioFormat` struct includes a static helper utility that wraps the `SoundMetadataReader` to quickly infer format information from a raw stream. This is useful when initializing devices or providers without manually configuring the `AudioFormat`.
+
+```csharp
+using SoundFlow.Structs;
+using System.IO;
+
+// You have a stream, but you don't know if it's Wav, Mp3, or Flac,
+// and you don't know the sample rate.
+using var fileStream = File.OpenRead("mystery_file.audio");
+
+// AudioFormat.GetFormatFromStream inspects the header bytes.
+AudioFormat? format = AudioFormat.GetFormatFromStream(fileStream);
+
+if (format.HasValue)
+{
+    // Format detected!
+    Console.WriteLine($"Detected: {format.Value.SampleRate}Hz, {format.Value.Channels} Channels");
+
+    // You can now safely use this to initialize a device
+    // engine.InitializePlaybackDevice(null, format.Value);
+}
+else
+{
+    Console.WriteLine("Could not determine audio format.");
+}
+```

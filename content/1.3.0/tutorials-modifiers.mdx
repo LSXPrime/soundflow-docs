@@ -1,0 +1,750 @@
+﻿---
+id: 9
+title: Audio Modifiers & Effects
+description: Comprehensive tutorials for applying various audio effects and modifiers (reverb, EQ, compression, etc.) with SoundFlow.
+navOrder: 9
+category: Tutorials and Examples
+---
+import {Tab, Tabs, Card, CardBody} from "@heroui/react";
+import {Steps, Step} from '/src/components/Shared/Steps';
+import {Icon} from "@iconify/react";
+
+# Applying Audio Modifiers & Effects with SoundFlow
+
+Welcome to the SoundFlow audio modifiers and effects tutorials! This guide will walk you through applying various digital audio effects to your playback streams using the powerful SoundFlow C# audio library.
+
+Whether you're looking to add reverb, equalize frequencies, compress dynamics, or mix multiple sources, these examples have you covered.
+
+<Tabs color="secondary" variant="underlined" aria-label="Modifier tutorials">
+    <Tab key="reverb" title="Reverb">
+        Demonstrates how to apply a reverb effect using the `AlgorithmicReverbModifier`.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o ReverbEffect
+                cd ReverbEffect
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement player with reverb" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Modifiers;
+                using SoundFlow.Providers;
+                using SoundFlow.Structs;
+                using System;
+                using System.IO;
+                using System.Linq;
+
+                namespace ReverbEffect;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        // Initialize the audio engine.
+                        using var audioEngine = new MiniAudioEngine();
+                        
+                        var defaultDevice = audioEngine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultDevice.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("No default playback device found.");
+                            return;
+                        }
+
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 2
+                        };
+                        
+                        using var device = audioEngine.InitializePlaybackDevice(defaultDevice, audioFormat);
+                        
+                        // Create a SoundPlayer and load an audio file.
+                        using var dataProvider = new StreamDataProvider(audioEngine, audioFormat, File.OpenRead("path/to/your/audiofile.wav"));
+                        using var player = new SoundPlayer(audioEngine, audioFormat, dataProvider);
+
+                        // Create an AlgorithmicReverbModifier. It now needs the audio format.
+                        var reverb = new AlgorithmicReverbModifier(audioFormat)
+                        {
+                            RoomSize = 0.8f,
+                            Damp = 0.5f,
+                            Wet = 0.3f, // Wet mix (0=dry, 1=fully wet)
+                            Width = 1f,
+                            PreDelay = 20f // Pre-delay in milliseconds
+                        };
+
+                        // Add the reverb modifier to the player.
+                        player.AddModifier(reverb);
+
+                        // Add the player to the device's master mixer.
+                        device.MasterMixer.AddComponent(player);
+
+                        // Start the device and player.
+                        device.Start();
+                        player.Play();
+
+                        // Keep the console application running until the user presses a key.
+                        Console.WriteLine("Playing audio with reverb... Press any key to stop.");
+                        Console.ReadKey();
+                        
+                        device.Stop();
+                    }
+                }
+                ```
+                ***Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.***
+            </Step>
+            <Step title="Run & Experiment" description="Run the app and adjust parameters" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+
+        After initializing the `AudioEngine` and the `AudioPlaybackDevice`, an `AlgorithmicReverbModifier` is created. In the new API, the modifier's constructor requires an `AudioFormat` instance to correctly configure its internal delay lines and filters based on the sample rate and channel count. The `Wet` property now controls the blend between the original (dry) and processed (wet) signals, where 0 is fully dry and 1 is fully wet. We add this `reverb` modifier to the `player`, which is then added to the `device.MasterMixer` for playback. Experiment with `RoomSize`, `Damp`, `Wet`, `Width`, and `PreDelay` to shape the reverb's character.
+    </Tab>
+
+    <Tab key="vocal-extraction" title="Vocal Extraction">
+        Demonstrates how to isolate vocals from a mixed audio track using the `VocalExtractorModifier`.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o VocalExtractor
+                cd VocalExtractor
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement player with vocal extractor" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Modifiers;
+                using SoundFlow.Providers;
+                using SoundFlow.Structs;
+                using System;
+                using System.IO;
+                using System.Linq;
+
+                namespace VocalExtractor;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        // Initialize the audio engine.
+                        using var audioEngine = new MiniAudioEngine();
+                        
+                        var defaultDevice = audioEngine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultDevice.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("No default playback device found.");
+                            return;
+                        }
+
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 2
+                        };
+                        
+                        using var device = audioEngine.InitializePlaybackDevice(defaultDevice, audioFormat);
+                        
+                        // Create a SoundPlayer and load a stereo music file.
+                        using var dataProvider = new StreamDataProvider(audioEngine, audioFormat, File.OpenRead("path/to/your/song.mp3"));
+                        using var player = new SoundPlayer(audioEngine, audioFormat, dataProvider);
+
+                        // Create the VocalExtractorModifier.
+                        // We use a larger FFT size (4096) for better frequency resolution, which helps separate vocals from bass.
+                        // We set the frequency range to 100Hz - 10kHz to focus on the human voice.
+                        var vocalExtractor = new VocalExtractorModifier(
+                            sampleRate: audioFormat.SampleRate,
+                            minFrequency: 100f, 
+                            maxFrequency: 10000f,
+                            fftSize: 4096,
+                            hopSize: 1024
+                        );
+
+                        // Add the modifier to the player.
+                        player.AddModifier(vocalExtractor);
+
+                        // Add the player to the device's master mixer.
+                        device.MasterMixer.AddComponent(player);
+
+                        // Start playback.
+                        device.Start();
+                        player.Play();
+
+                        Console.WriteLine("Playing audio with Vocal Extraction.");
+                        Console.WriteLine("Press 'T' to toggle the effect on/off. Press any other key to stop.");
+
+                        // Simple loop to toggle the effect
+                        while (true)
+                        {
+                            var key = Console.ReadKey(true).Key;
+                            if (key == ConsoleKey.T)
+                            {
+                                vocalExtractor.Enabled = !vocalExtractor.Enabled;
+                                Console.WriteLine($"Vocal Extractor: {(vocalExtractor.Enabled ? "ON" : "OFF")}");
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                        
+                        device.Stop();
+                    }
+                }
+                ```
+                ***Replace `"path/to/your/song.mp3"` with the actual path to a stereo music file.***
+            </Step>
+            <Step title="Run & Experiment" description="Run the app and toggle the effect" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+
+        This code demonstrates the use of the `VocalExtractorModifier`. This advanced effect uses different algorithms depending on the input channels:
+        *   **Stereo:** It uses **Center-Channel Extraction (Mid-Side)**. Since vocals are typically mixed in the center and instruments are often panned to the sides, the modifier subtracts the side information from the mid signal, effectively removing panned instruments.
+        *   **Mono:** It falls back to **Spectral Gating** and **Bandpass Filtering**. It attenuates frequencies outside the vocal range (`MinFrequency` to `MaxFrequency`) and suppresses quiet frequency bands likely to be noise.
+
+        We instantiate the modifier with an `fftSize` of 4096. A larger FFT size provides better frequency resolution, which is crucial for distinguishing low-frequency vocal fundamentals from bass instruments. The loop allows you to toggle the effect on and off in real-time to hear the isolation result.
+    </Tab>
+
+    <Tab key="equalization" title="Equalization">
+        Demonstrates how to use the `ParametricEqualizer` to adjust frequency balance.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o Equalization
+                cd Equalization
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement player with EQ" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Modifiers;
+                using SoundFlow.Providers;
+                using SoundFlow.Structs;
+                using System;
+                using System.Collections.Generic;
+                using System.IO;
+                using System.Linq;
+
+                namespace Equalization;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        // Initialize the audio engine.
+                        using var audioEngine = new MiniAudioEngine();
+                        
+                        var defaultDevice = audioEngine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultDevice.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("No default playback device found.");
+                            return;
+                        }
+
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 2
+                        };
+                        
+                        using var device = audioEngine.InitializePlaybackDevice(defaultDevice, audioFormat);
+                        
+                        // Create a SoundPlayer and load an audio file.
+                        using var dataProvider = new StreamDataProvider(audioEngine, audioFormat, File.OpenRead("path/to/your/audiofile.wav"));
+                        using var player = new SoundPlayer(audioEngine, audioFormat, dataProvider);
+
+                        // Create a ParametricEqualizer, which now requires the audio format.
+                        var equalizer = new ParametricEqualizer(audioFormat);
+
+                        // Add some equalizer bands.
+                        var bands = new List<EqualizerBand>
+                        {
+                            // Boost low frequencies (bass)
+                            new(FilterType.LowShelf, 100, 6, 0.7f),
+                            // Cut mid frequencies
+                            new(FilterType.Peaking, 1000, -4, 2f),
+                            // Boost high frequencies (treble)
+                            new(FilterType.HighShelf, 10000, 5, 0.7f)
+                        };
+                        equalizer.AddBands(bands);
+
+                        // Add the equalizer to the player.
+                        player.AddModifier(equalizer);
+
+                        // Add the player to the device's master mixer.
+                        device.MasterMixer.AddComponent(player);
+
+                        // Start playback.
+                        device.Start();
+                        player.Play();
+
+                        // Keep the console application running until the user presses a key.
+                        Console.WriteLine("Playing audio with equalization... Press any key to stop.");
+                        Console.ReadKey();
+                        
+                        device.Stop();
+                    }
+                }
+                ```
+                ***Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.***
+            </Step>
+            <Step title="Run & Experiment" description="Run the app and adjust bands" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+
+        Following the new API structure, this code sets up the `AudioEngine` and an `AudioPlaybackDevice`. A `ParametricEqualizer` is instantiated, and like the reverb modifier, its constructor now requires an `AudioFormat` to correctly calculate filter coefficients based on the sample rate.
+        We define a `List<EqualizerBand>` to configure our EQ settings: a low-shelf filter to boost bass, a peaking filter to cut a specific mid-range frequency, and a high-shelf filter to boost treble. The `equalizer.AddBands()` method applies these settings. The `equalizer` is then added as a modifier to the `player`, which is subsequently added to the `device.MasterMixer`. You will hear the audio with the equalization applied. Experiment with different `FilterType` enums, frequencies, gain values, and Q factors to shape the sound to your liking.
+    </Tab>
+
+    <Tab key="chorus-delay" title="Chorus & Delay">
+        Demonstrates how to apply chorus and delay effects using `ChorusModifier` and `DelayModifier`.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o ChorusDelay
+                cd ChorusDelay
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement player with effects" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Modifiers;
+                using SoundFlow.Providers;
+                using SoundFlow.Structs;
+                using System;
+                using System.IO;
+                using System.Linq;
+
+                namespace ChorusDelay;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        // Initialize the audio engine.
+                        using var audioEngine = new MiniAudioEngine();
+                        
+                        var defaultDevice = audioEngine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultDevice.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("No default playback device found.");
+                            return;
+                        }
+
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 2
+                        };
+                        
+                        using var device = audioEngine.InitializePlaybackDevice(defaultDevice, audioFormat);
+                        
+                        // Create a SoundPlayer and load an audio file.
+                        using var dataProvider = new StreamDataProvider(audioEngine, audioFormat, File.OpenRead("path/to/your/audiofile.wav"));
+                        using var player = new SoundPlayer(audioEngine, audioFormat, dataProvider);
+
+                        // Create a ChorusModifier.
+                        var chorus = new ChorusModifier(
+                            audioFormat,
+                            depthMs: 2f,           // Depth (in milliseconds)
+                            rateHz: 0.8f,          // LFO Rate (in Hz)
+                            feedback: 0.5f,      // Feedback amount
+                            wetDryMix: 0.5f      // Wet/dry mix (0 = dry, 1 = wet)
+                        );
+
+                        // Create a DelayModifier.
+                        var delaySamples = (int)(audioFormat.SampleRate * 0.5); // 500ms delay
+                        var delay = new DelayModifier(
+                            audioFormat,
+                            delaySamples: delaySamples, 
+                            feedback: 0.6f,      
+                            wetMix: 0.4f,       
+                            cutoff: 4000f 
+                        );
+
+                        // Add the chorus and delay modifiers to the player.
+                        player.AddModifier(chorus);
+                        player.AddModifier(delay);
+
+                        // Add the player to the device's master mixer.
+                        device.MasterMixer.AddComponent(player);
+                        
+                        // Start playback.
+                        device.Start();
+                        player.Play();
+
+                        // Keep the console application running until the user presses a key.
+                        Console.WriteLine("Playing audio with chorus and delay... Press any key to stop.");
+                        Console.ReadKey();
+                        
+                        device.Stop();
+                    }
+                }
+                ```
+                ***Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.***
+            </Step>
+            <Step title="Run & Experiment" description="Run the app and adjust effects" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+
+        This code demonstrates chaining multiple effects. After the standard `AudioEngine` and `AudioPlaybackDevice` setup, we instantiate `ChorusModifier` and `DelayModifier`. Both modifiers now require an `AudioFormat` object in their constructors to configure internal buffers and timing calculations correctly based on the sample rate. The delay length for the `DelayModifier` is now specified in samples instead of milliseconds.
+        Both `chorus` and `delay` modifiers are added to the `player` instance. They will be processed in the order they were added: the audio will first pass through the chorus effect, and the output of the chorus will then be fed into the delay effect. This chain is then added to the `device.MasterMixer` for playback.
+    </Tab>
+
+    <Tab key="compression" title="Compression">
+        Demonstrates how to use the `CompressorModifier` to reduce the dynamic range of an audio stream.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o Compression
+                cd Compression
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement player with compressor" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Modifiers;
+                using SoundFlow.Providers;
+                using SoundFlow.Structs;
+                using System;
+                using System.IO;
+                using System.Linq;
+
+                namespace Compression;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        // Initialize the audio engine.
+                        using var audioEngine = new MiniAudioEngine();
+                        
+                        var defaultDevice = audioEngine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultDevice.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("No default playback device found.");
+                            return;
+                        }
+
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 2
+                        };
+                        
+                        using var device = audioEngine.InitializePlaybackDevice(defaultDevice, audioFormat);
+                        
+                        // Create a SoundPlayer and load an audio file.
+                        using var dataProvider = new StreamDataProvider(audioEngine, audioFormat, File.OpenRead("path/to/your/audiofile.wav"));
+                        using var player = new SoundPlayer(audioEngine, audioFormat, dataProvider);
+
+                        // Create a CompressorModifier.
+                        var compressor = new CompressorModifier(
+                            audioFormat,
+                            thresholdDb: -20f, // Threshold (in dB)
+                            ratio: 4f,        // Compression ratio
+                            attackMs: 10f,      // Attack time (in milliseconds)
+                            releaseMs: 100f,    // Release time (in milliseconds)
+                            kneeDb: 5f,         // Knee width (in dB)
+                            makeupGainDb: 6f   // Makeup gain (in dB)
+                        );
+
+                        // Add the compressor to the player.
+                        player.AddModifier(compressor);
+                        
+                        // Add the player to the device's master mixer.
+                        device.MasterMixer.AddComponent(player);
+                        
+                        // Start playback.
+                        device.Start();
+                        player.Play();
+                        
+                        // Keep the console application running until the user presses a key.
+                        Console.WriteLine("Playing audio with compression... Press any key to stop.");
+                        Console.ReadKey();
+                        
+                        device.Stop();
+                    }
+                }
+                ```
+                ***Replace `"path/to/your/audiofile.wav"` with the actual path to an audio file.***
+            </Step>
+            <Step title="Run & Experiment" description="Run the app and adjust parameters" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+
+        This code showcases dynamic range compression. After initializing the `AudioEngine` and an `AudioPlaybackDevice`, a `CompressorModifier` is created. Its constructor now requires an `AudioFormat` to accurately time its attack and release stages based on the sample rate. The compressor is configured with a -20dB threshold, a 4:1 ratio, a soft knee of 5dB, and 6dB of makeup gain to compensate for the volume reduction. This modifier is then added to the `player`, which is routed to the `device.MasterMixer`. When played, the audio's dynamic range will be reduced, making quiet parts louder and loud parts quieter, resulting in a more consistent overall volume level.
+    </Tab>
+
+    <Tab key="resampler" title="Real-time Resampling">
+        Demonstrates how to use the `ResamplerModifier` to change playback speed and pitch in real-time.
+
+        <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20 mb-6">
+            <CardBody>
+                <div className="flex items-center gap-3">
+                    <Icon icon="lucide:info" className="text-primary text-2xl flex-shrink-0" />
+                    <div className="text-sm">
+                        <strong>Varispeed Effect:</strong> Unlike the `TimeStretch` feature in `AudioSegment` (which preserves pitch), the `ResamplerModifier` links pitch and speed together.
+                        <ul className="list-disc pl-5 mt-1">
+                            <li>Factor > 1.0: Faster speed, higher pitch (Chipmunk effect).</li>
+                            <li>Factor < 1.0: Slower speed, lower pitch (Slow-motion effect).</li>
+                        </ul>
+                    </div>
+                </div>
+            </CardBody>
+        </Card>
+
+        <Steps>
+            <Step title="Create & Install" description="Setup project" icon='ic:outline-create-new-folder'>
+                ### 1. Create project:
+                ```bash
+                dotnet new console -o ResamplerDemo
+                cd ResamplerDemo
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Implement variable speed player" icon='ph:code-bold'>
+                ### 2. Code `Program.cs`:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Modifiers;
+                using SoundFlow.Providers;
+                using SoundFlow.Structs;
+                using System;
+                using System.IO;
+                using System.Linq;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        using var engine = new MiniAudioEngine();
+                        var format = AudioFormat.DvdHq;
+                        using var device = engine.InitializePlaybackDevice(null, format);
+                        
+                        using var dataProvider = new StreamDataProvider(engine, format, File.OpenRead("audio.wav"));
+                        using var player = new SoundPlayer(engine, format, dataProvider);
+
+                        // Create the resampler. Start at normal speed (1.0).
+                        var resampler = new ResamplerModifier(1.0f);
+                        player.AddModifier(resampler);
+
+                        device.MasterMixer.AddComponent(player);
+                        device.Start();
+                        player.Play();
+
+                        Console.WriteLine("Control Speed/Pitch:");
+                        Console.WriteLine("[+] Increase Speed");
+                        Console.WriteLine("[-] Decrease Speed");
+                        Console.WriteLine("[R] Reset to 1.0");
+                        Console.WriteLine("[Q] Quit");
+
+                        while (true)
+                        {
+                            var key = Console.ReadKey(true).Key;
+                            if (key == ConsoleKey.Q) break;
+
+                            switch (key)
+                            {
+                                case ConsoleKey.OemPlus:
+                                case ConsoleKey.Add:
+                                    resampler.ResampleFactor += 0.1f;
+                                    break;
+                                case ConsoleKey.OemMinus:
+                                case ConsoleKey.Subtract:
+                                    resampler.ResampleFactor = Math.Max(0.1f, resampler.ResampleFactor - 0.1f);
+                                    break;
+                                case ConsoleKey.R:
+                                    resampler.ResampleFactor = 1.0f;
+                                    break;
+                            }
+                            Console.WriteLine($"Current Factor: {resampler.ResampleFactor:F1}x");
+                        }
+                        
+                        device.Stop();
+                    }
+                }
+                ```
+            </Step>
+        </Steps>
+    </Tab>
+
+    <Tab key="mixing" title="Mixing">
+        Demonstrates how to use the `Mixer` to combine multiple audio sources.
+        <Steps>
+            <Step title="Create & Install" description="Setup project & package"
+                  icon='ic:outline-create-new-folder'>
+                ### 1. Create a new console application and install SoundFlow:
+                ```bash
+                dotnet new console -o Mixing
+                cd Mixing
+                dotnet add package SoundFlow
+                ```
+            </Step>
+            <Step title="Write Code" description="Combine multiple audio sources" icon='ph:code-bold'>
+                ### 2. Replace the contents of `Program.cs` with the following code:
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Abstracts.Devices;
+                using SoundFlow.Backends.MiniAudio;
+                using SoundFlow.Components;
+                using SoundFlow.Enums;
+                using SoundFlow.Providers;
+                using SoundFlow.Structs;
+                using System;
+                using System.IO;
+                using System.Linq;
+
+                namespace Mixing;
+
+                internal static class Program
+                {
+                    private static void Main(string[] args)
+                    {
+                        // Initialize the audio engine.
+                        using var audioEngine = new MiniAudioEngine();
+                        
+                        var defaultDevice = audioEngine.PlaybackDevices.FirstOrDefault(d => d.IsDefault);
+                        if (defaultDevice.Id == IntPtr.Zero)
+                        {
+                            Console.WriteLine("No default playback device found.");
+                            return;
+                        }
+
+                        var audioFormat = new AudioFormat
+                        {
+                            Format = SampleFormat.F32,
+                            SampleRate = 48000,
+                            Channels = 2
+                        };
+                        
+                        using var device = audioEngine.InitializePlaybackDevice(defaultDevice, audioFormat);
+                        
+                        // Create two SoundPlayer instances and load different audio files.
+                        using var dataProvider1 = new StreamDataProvider(audioEngine, audioFormat, File.OpenRead("path/to/your/audiofile1.wav"));
+                        using var player1 = new SoundPlayer(audioEngine, audioFormat, dataProvider1);
+
+                        using var dataProvider2 = new StreamDataProvider(audioEngine, audioFormat, File.OpenRead("path/to/your/audiofile2.wav"));
+                        using var player2 = new SoundPlayer(audioEngine, audioFormat, dataProvider2);
+
+                        // Create an Oscillator that generates a sine wave.
+                        using var oscillator = new Oscillator(audioEngine, audioFormat)
+                        {
+                            Frequency = 440, // 440 Hz (A4 note)
+                            Amplitude = 0.5f,
+                            Type = Oscillator.WaveformType.Sine
+                        };
+
+                        // Add the players and the oscillator to the device's master mixer.
+                        device.MasterMixer.AddComponent(player1);
+                        device.MasterMixer.AddComponent(player2);
+                        device.MasterMixer.AddComponent(oscillator);
+
+                        // Start playback for both players.
+                        device.Start();
+                        player1.Play();
+                        player2.Play();
+
+                        // Keep the console application running until the user presses a key.
+                        Console.WriteLine("Playing mixed audio... Press any key to stop.");
+                        Console.ReadKey();
+                        
+                        device.Stop();
+                    }
+                }
+                ```
+                ***Replace `"path/to/your/audiofile1.wav"` and `"path/to/your/audiofile2.wav"` with the actual
+                paths to two different audio files.***
+            </Step>
+            <Step title="Run & Experiment" description="Run the app and adjust levels" icon='lucide:play'>
+                ### 3. Build and run the application:
+                ```bash
+                dotnet run
+                ```
+            </Step>
+        </Steps>
+
+        **Explanation:**
+
+        This code demonstrates the core mixing capability of SoundFlow. After initializing the `AudioEngine` and an `AudioPlaybackDevice`, we create multiple `SoundComponent` instances: two `SoundPlayer`s for audio files and one `Oscillator` for a synthesized sine wave. Note that the `Oscillator` now also requires the `audioEngine` and `audioFormat` in its constructor.
+        Instead of a static master mixer, all components are added directly to the `device.MasterMixer`. The mixer automatically sums the audio output from all its added components. When the device is started, you will hear both audio files and the sine wave playing simultaneously, mixed together. You can control the individual contribution of each component to the mix by adjusting its `Volume` and `Pan` properties.
+    </Tab>
+</Tabs>
+
+We hope these tutorials have provided a solid foundation for applying audio effects with SoundFlow!
+Next, explore using audio analyzers with SoundFlow in our [Analysis Tutorial](./tutorials-analysis).

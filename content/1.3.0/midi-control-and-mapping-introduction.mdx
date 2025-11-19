@@ -1,0 +1,183 @@
+﻿---
+id: 13.4
+title: MIDI Control & Mapping (Introduction)
+description: Learn how to expose parameters on your custom components for real-time control using the IMidiMappable interface and ControllableParameter attribute.
+navOrder: 13.4
+category: MIDI
+---
+
+# MIDI Control & Mapping (Introduction)
+
+SoundFlow provides a powerful and flexible system for controlling the parameters of your audio components in real-time using MIDI. This allows you to create dynamic, interactive experiences where physical knobs, faders, and buttons on a MIDI controller can manipulate properties like filter cutoff, reverb wetness, or track volume.
+
+This guide covers the foundational step: how to prepare your custom components and effects to be "seen" by this mapping system.
+
+## 1. Two Ways to Control Parameters
+
+There are two primary methods for an object to respond to MIDI messages in SoundFlow:
+
+1.  **Direct Control (`IMidiControllable`):** This is for components that have a hardcoded, intrinsic response to specific MIDI messages. The prime example is the `Synthesizer`, which *must* respond to `NoteOn` and `NoteOff` messages to function. This is achieved by implementing the `IMidiControllable` interface and its `ProcessMidiMessage` method.
+
+2.  **Dynamic Mapping:** This is a flexible, user-configurable system for linking **any** MIDI message to **any** exposed parameter at runtime. For example, you might decide on the fly to map CC knob #74 on your keyboard to a filter's cutoff frequency, or a button to toggle a delay effect on and off. This is the focus of this guide.
+
+The goal of this guide is to make your own custom classes **mappable**.
+
+## 2. Step 1: The `IMidiMappable` Interface
+
+For an object to be a valid target for the dynamic mapping system, it **must** implement the `IMidiMappable` interface. This is a simple but critical contract.
+
+```csharp
+public interface IMidiMappable
+{
+    /// <summary>
+    /// Gets the unique identifier for this mappable instance.
+    /// This ID is used to persist and restore MIDI mappings.
+    /// </summary>
+    Guid Id { get; }
+}
+```
+
+### The `Id` Property
+
+The single requirement of this interface is the `Id` property, which must return a `Guid` that is **unique and stable** for the lifetime of that object instance.
+
+Its role is crucial: when you save a project, a MIDI mapping is stored as a link between a MIDI message and the `Id` of a target object (e.g., "CC #74 on MyKeyboard controls the 'Cutoff' property on the object with ID `8f1b...`"). When you load the project, the `MidiMappingManager` uses this `Id` to find the exact same object instance and re-establish the link.
+
+### Built-in Mappable Classes
+
+You often don't need to implement this yourself, as SoundFlow's core building blocks are already mappable out-of-the-box:
+
+*   `SoundComponent` (and all derivatives like `Mixer`, `SoundPlayer`, `Synthesizer`)
+*   `SoundModifier` (and all derivatives like `Filter`, `DelayModifier`, `CompressorModifier`)
+*   `MidiModifier` (and all derivatives)
+*   `AudioAnalyzer`
+*   `Track`
+*   `TrackSettings`
+*   `AudioSegmentSettings`
+*   `Composition`
+
+When you create a `new Filter(...)`, it automatically gets a new, unique `Id` from its base class constructor, ready for mapping.
+
+## 3. Step 2: The `[ControllableParameter]` Attribute
+
+Simply implementing `IMidiMappable` tells the system that an object *can* be a target. To specify *which properties* on that object can be controlled, you must decorate them with the `ControllableParameterAttribute`.
+
+This attribute acts as metadata, providing the mapping system (and any UI you build on top of it) with the necessary information to correctly scale MIDI input and display the parameter to the user.
+
+```csharp
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class ControllableParameterAttribute : Attribute
+{
+    public string DisplayName { get; }
+    public double MinValue { get; }
+    public double MaxValue { get; }
+    public MappingScale Scale { get; }
+
+    public ControllableParameterAttribute(string displayName, double minValue, double maxValue, MappingScale scale = MappingScale.Linear);
+}
+```
+
+### Attribute Properties Explained
+
+*   **`DisplayName` (string):** The user-friendly name that would appear in a UI dropdown (e.g., "Filter Cutoff", "Reverb Time").
+*   **`MinValue` / `MaxValue` (double):** The valid numeric range for the property. This is absolutely critical for correctly scaling an incoming MIDI value (e.g., 0-127) to the property's expected range (e.g., 20.0 to 20000.0).
+*   **`Scale` (`MappingScale` enum):** This tells the mapping engine how to interpret the range.
+*   **`MappingScale.Linear`**: Use this for parameters that change linearly, such as **Volume**, **Pan**, or a **Wet/Dry Mix**. A MIDI value of 64 will map to the exact midpoint of the `MinValue`/`MaxValue` range.
+*   **`MappingScale.Logarithmic`**: This is essential for parameters related to human perception, especially **frequency**. Human hearing perceives frequency logarithmically (the difference between 100 Hz and 200 Hz is much more noticeable than between 10,000 Hz and 10,100 Hz). Using this scale ensures that turning a physical knob feels smooth and musically responsive across the entire frequency range. It is highly recommended for filter cutoffs, EQ frequencies, etc.
+
+The attribute can be applied to public, settable properties of type `float`, `double`, `int`, `long`, `bool`, and `enum`. For `bool` and `enum` types, `MinValue` and `MaxValue` are typically set to `0` and `1` (for bool) or the range of enum values.
+
+## 4. Complete Example: Creating a Mappable "BitCrusher" Effect
+
+Let's build a custom `SoundModifier` from scratch and make its parameters fully controllable via MIDI mapping. This `BitCrusher` effect will reduce the audio's sample rate (downsampling) and bit depth (quantization) to create a lo-fi, retro digital sound.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Interfaces;
+
+// Define an enum for one of our parameters.
+public enum NoiseType { None, White, Pink }
+
+/// <summary>
+/// A custom SoundModifier that applies a bit-crushing effect to audio.
+/// It inherits from SoundModifier, which already implements IMidiMappable.
+/// </summary>
+public class BitCrusherModifier : SoundModifier
+{
+    private float _lastSample;
+    private int _downsampleCounter;
+    private readonly Random _random = new();
+
+    public override string Name { get; set; } = "BitCrusher";
+
+    // Mappable Parameters
+
+    [ControllableParameter("Bit Depth", 1.0, 16.0)]
+    public float BitDepth { get; set; } = 8.0f;
+
+    [ControllableParameter("Downsampling", 1.0, 50.0, MappingScale.Logarithmic)]
+    public float DownsampleFactor { get; set; } = 1.0f;
+
+    [ControllableParameter("Add Noise", 0, 1)] // Min/Max for bool
+    public bool AddNoise { get; set; } = false;
+
+    [ControllableParameter("Noise Type", 0, 2)] // Min/Max for enum values
+    public NoiseType Noise { get; set; } = NoiseType.White;
+
+    [ControllableParameter("Mix", 0.0, 1.0)]
+    public float WetDryMix { get; set; } = 1.0f;
+
+    // Processing Logic
+
+    public override float ProcessSample(float sample, int channel)
+    {
+        // 1. Downsampling (Sample Rate Reduction)
+        float processedSample;
+        if (_downsampleCounter >= DownsampleFactor)
+        {
+            _downsampleCounter = 0;
+            _lastSample = sample;
+            processedSample = sample;
+        }
+        else
+        {
+            processedSample = _lastSample;
+            _downsampleCounter++;
+        }
+
+        // 2. Quantization (Bit Depth Reduction)
+        var steps = MathF.Pow(2, BitDepth);
+        processedSample = MathF.Round(processedSample * (steps - 1)) / (steps - 1);
+
+        // 3. Add Noise (Optional)
+        if (AddNoise)
+        {
+            float noise = 0;
+            if (Noise == NoiseType.White)
+            {
+                noise = ((float)_random.NextDouble() * 2.0f - 1.0f) / steps;
+            }
+            // A more complex Pink noise implementation would go here.
+            processedSample += noise;
+        }
+
+        // 4. Mix original and processed signal
+        return sample * (1.0f - WetDryMix) + processedSample * WetDryMix;
+    }
+
+    public override void Process(Span<float> buffer, int channels)
+    {
+        if (!Enabled) return;
+
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            // We assume mono processing for simplicity, using channel 0's state
+            buffer[i] = ProcessSample(buffer[i], 0);
+        }
+    }
+}
+```
+
+This `BitCrusherModifier` is now fully prepared. The `MidiMappingManager` can discover its `Id` and its five controllable parameters, along with their names, ranges, and scaling types.
+
+The next guide, **MIDI Control & Mapping (Advanced)**, will show you how to take this component and programmatically create `MidiMapping` objects to link it to a physical controller.

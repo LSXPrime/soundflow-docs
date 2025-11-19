@@ -1,0 +1,166 @@
+﻿---
+id: 18
+title: The Sequencer Component
+description: Learn to use the Sequencer component for high-precision, tempo-aware playback of MIDI data from files or memory.
+navOrder: 18
+category: Synthesis
+---
+
+import {Icon} from "@iconify/react";
+
+# The Sequencer & Sample-Accurate MIDI Playback
+
+The `Sequencer` (`SoundFlow.Synthesis.Sequencer`) is a specialized `SoundComponent` designed for high-precision playback of MIDI data. Unlike other components that generate or process audio, the `Sequencer`'s primary role is to act as a **sample-accurate MIDI event dispatcher**.
+
+It reads MIDI events from a `MidiDataProvider` and sends them to a target (like a `Synthesizer`) at the precise moment they are meant to occur, synchronized perfectly with the audio rendering clock. This eliminates the timing jitter that can occur with less precise, system-timer-based MIDI playback.
+
+## Core Concepts
+
+*   **Input (`MidiDataProvider`):** The `Sequencer` is driven by a `MidiDataProvider`. This provider holds a pre-processed, time-ordered list of all MIDI events for a given musical sequence. It's typically created from a `.mid` file or a `MidiSequence` object from the editing engine.
+
+*   **Output (`IMidiControllable` Target):** The `Sequencer` sends its MIDI messages to a target that implements the `IMidiControllable` interface. In most cases, this will be a `Synthesizer` instance.
+
+*   **Sample-Accurate Timing:** The `Sequencer` achieves its timing precision by hooking into the audio processing graph. Its `GenerateAudio` method (which does not write any audio samples) is called by the `Mixer` on the high-priority audio thread for each audio buffer. Inside this method, it calculates the exact time range of the current buffer and dispatches any MIDI events from its `MidiDataProvider` that fall within that slice of time.
+
+*   **Tempo Awareness (`ISequencerContext`):** To correctly translate MIDI ticks into real time, the `Sequencer` needs access to a tempo map. It does this via the `ISequencerContext` interface.
+    *   When used within a `Composition`, the `composition.Renderer` automatically handles all sequencing logic, using the `Composition` itself as the context to sync with the master `TempoTrack`.
+    *   When used **standalone** (as shown in the example below), the `Sequencer` can be given a `Context` property. If `null`, it falls back to using the `MidiDataProvider`'s own internal tempo map (derived from the original MIDI file).
+
+<div className="flex items-center gap-3 my-4 p-4 rounded-lg bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+    <Icon icon="lucide:info" className="text-primary text-2xl flex-shrink-0" />
+    <p className="text-sm">
+        **Key takeaway:** You typically only need to create a `Sequencer` instance manually when you want to build a standalone MIDI player. For multi-track projects, the `Composition`'s built-in playback system handles all sequencing for you.
+    </p>
+</div>
+
+
+## The `MidiDataProvider`: The Heart of Sequencing
+
+Before diving into the Sequencer, it's crucial to understand the `MidiDataProvider`. This class transforms raw MIDI data (from a file or a recording) into a format optimized for real-time playback.
+
+### Key Features
+
+*   **Event Linearization:** A Standard MIDI File contains multiple tracks, each with its own timeline. The `MidiDataProvider` merges all events into a single, time-ordered list of `TimedMidiEvent` structures. This allows the sequencer to simply iterate through the list without juggling multiple track pointers.
+*   **Absolute Timing:** Instead of the relative "delta-time" used in MIDI files (ticks since the *previous* event), the `MidiDataProvider` converts everything to **absolute ticks** from the beginning of the sequence. This makes seeking and random access trivial.
+*   **Tempo Mapping & Time Conversion:** MIDI files often contain variable tempos. The `MidiDataProvider` scans the file to build an internal **Tempo Map**. It exposes two vital methods:
+    *   `GetTimeSpanForTick(long tick)`: Calculates the exact real-time timestamp (`TimeSpan`) for a given MIDI tick, accounting for all tempo changes up to that point.
+    *   `GetTickForTimeSpan(TimeSpan time)`: The inverse operation, essential for locating the playback position.
+
+### Usage Example
+
+```csharp
+// Load a MIDI file
+var midiFile = MidiFileParser.Parse(File.OpenRead("song.mid"));
+var provider = new MidiDataProvider(midiFile);
+
+// Check duration
+Console.WriteLine($"Song Duration: {provider.Duration}");
+
+// Find out when the 1000th tick happens in real time
+var timeAtTick1000 = provider.GetTimeSpanForTick(1000);
+Console.WriteLine($"Tick 1000 happens at: {timeAtTick1000}");
+```
+
+## Standalone MIDI File Player Example
+
+This complete, runnable example demonstrates the primary use case for the `Sequencer`: building a simple, high-quality MIDI file player.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Metadata.Midi;
+using SoundFlow.Providers;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using System.IO;
+using System.Linq;
+
+public static class Program
+{
+    public static void Main(string[] args)
+    {
+        Console.WriteLine("Standalone Sequencer MIDI Player Example");
+
+        // User Configuration
+
+        // Replace with the path to your MIDI file and a SoundFont file.
+        var midiFilePath = @"C:\path\to\your\song.mid";
+        var soundFontPath = @"C:\path\to\your\soundfont.sf2";
+
+        if (!File.Exists(midiFilePath) || !File.Exists(soundFontPath))
+        {
+            Console.WriteLine("Error: Please provide valid paths for the MIDI and SoundFont files.");
+            return;
+        }
+
+        // 1. Standard engine and device setup
+        using var engine = new MiniAudioEngine();
+        var format = AudioFormat.DvdHq;
+        using var device = engine.InitializePlaybackDevice(null, format);
+
+        // 2. Load MIDI data and an instrument bank
+        var midiFile = MidiFileParser.Parse(File.OpenRead(midiFilePath));
+        var midiDataProvider = new MidiDataProvider(midiFile);
+
+        // The SoundFontBank is IDisposable and must be managed.
+        using var instrumentBank = new SoundFontBank(soundFontPath, format);
+
+        Console.WriteLine($"Loaded MIDI file: {Path.GetFileName(midiFilePath)}, Duration: {midiDataProvider.Duration:mm\\:ss}");
+        Console.WriteLine($"Loaded SoundFont with {instrumentBank.AvailablePresets.Count} presets.");
+
+        // 3. Create the Synthesizer (the sound source)
+        var synthesizer = new Synthesizer(engine, format, instrumentBank);
+
+        // 4. Create the Sequencer (the MIDI event dispatcher)
+        var sequencer = new Sequencer(engine, format, midiDataProvider, synthesizer)
+        {
+            IsLooping = true // Let's loop the playback
+        };
+
+        // 5. Build the audio graph
+        // The Synthesizer generates the audio.
+        device.MasterMixer.AddComponent(synthesizer);
+        // The Sequencer is also added so its GenerateAudio method is called for timing, even though it doesn't output audio itself.
+        device.MasterMixer.AddComponent(sequencer);
+
+        // 6. Start playback
+        device.Start();
+        sequencer.Play(); // This enables the sequencer's processing.
+
+        Console.WriteLine("\nPlayback started. Press any key to stop.");
+        Console.ReadKey();
+
+        // 7. Clean up
+        sequencer.Stop();
+        device.Stop();
+        synthesizer.Dispose();
+    }
+}
+```
+
+## Playback Control
+
+The `Sequencer` provides a simple set of methods to control playback:
+
+*   **`Play()`**: Starts or resumes sequencing. This sets `State` to `Playing` and `Enabled` to `true`.
+*   **`Pause()`**: Pauses sequencing. This sets `State` to `Paused` and `Enabled` to `false`.
+*   **`Stop()`**: Stops sequencing and resets the playback position to the beginning (`_currentTick = 0`). It also sends an "All Notes Off" CC message to its target to prevent stuck notes.
+*   **`Seek(TimeSpan time)`**: Jumps to a specific time in the sequence. It also sends an "All Notes Off" message before seeking.
+*   **`IsLooping` (property)**: If `true`, the `Sequencer` will automatically jump back to the beginning when it reaches the end of the `MidiDataProvider`.
+
+```csharp
+// Inside your application logic
+
+// Pause playback
+sequencer.Pause();
+
+// Resume playback
+sequencer.Play();
+
+// Jump to the 30-second mark
+sequencer.Seek(TimeSpan.FromSeconds(30));
+
+// Stop and reset to the beginning
+sequencer.Stop();
+```

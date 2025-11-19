@@ -1,0 +1,283 @@
+﻿---
+id: 12
+title: FFmpeg Codec Extension
+description: A detailed guide to using the SoundFlow.Codecs.FFMpeg package to add extensive audio format support for decoding and encoding (MP3, AAC, OGG, Opus, FLAC, and more).
+navOrder: 12
+category: Extensions
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs} from "@heroui/react";
+import { Steps, Step } from '/src/components/Shared/Steps';
+
+# FFmpeg Codec Extension
+
+The `SoundFlow.Codecs.FFMpeg` package is a powerful extension that integrates the world-class FFmpeg multimedia framework into SoundFlow. It provides a high-priority `ICodecFactory` implementation, enabling your applications to decode and encode a vast range of popular lossy and lossless audio formats that are not supported by the default engine.
+
+This extension utilizes a custom, high-performance native wrapper library (`soundflow-ffmpeg`) to ensure efficient, low-overhead communication between the .NET runtime and the underlying FFmpeg libraries.
+
+## Features
+
+*   **Wide Format Support:** Decode and encode dozens of formats, including MP3, AAC, OGG Vorbis, Opus, FLAC, ALAC (Apple Lossless), WMA, and many more.
+*   **Automatic Format Detection (Probing):** Intelligently detect the format of an audio stream without relying on file extensions, making your application robust to misnamed files.
+*   **High-Priority Factory:** The `FFmpegCodecFactory` has a high priority, ensuring it is automatically chosen over the default built-in codecs for any formats it supports.
+*   **Efficient Streaming Architecture:** Decodes and encodes directly from/to .NET `Stream` objects. This is highly memory-efficient as it does not require loading entire large files into memory.
+*   **Cross-Platform:** The NuGet package includes pre-compiled native binaries for a wide array of platforms and architectures, including Windows (x86, x64, ARM64), macOS (x64, Apple Silicon), Linux (x64, ARM, ARM64), Android, iOS, and FreeBSD.
+
+## Installation
+
+To use the FFmpeg extension, add the `SoundFlow.Codecs.FFMpeg` package to your project.
+
+<Tabs color="primary" variant="bordered" aria-label="Installation options" className="mt-4">
+    <Tab
+        key="nuget"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:nuget' />
+                <span>NuGet Package Manager</span>
+            </div>
+        }
+    >
+        ```bash
+        Install-Package SoundFlow.Codecs.FFMpeg
+        ```
+    </Tab>
+    <Tab
+        key="cli"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:dotnet' />
+                <span>.NET CLI</span>
+            </div>
+        }
+    >
+        ```bash
+        dotnet add package SoundFlow.Codecs.FFMpeg
+        ```
+    </Tab>
+</Tabs>
+
+## Getting Started: Basic Usage
+
+This example demonstrates the core workflow: registering the factory, decoding an MP3 file into raw audio samples, and then encoding those samples into a new FLAC file.
+
+<Steps layout='vertical'>
+    <Step title="Set Up Project" icon='ph:folder-open-bold'>
+        Create a new console application and install the `SoundFlow` and `SoundFlow.Codecs.FFMpeg` packages. Place an audio file named `input.mp3` in your project's output directory (e.g., `bin/Debug/net8.0`).
+    </Step>
+    <Step title="Write the Code" icon='ph:code-bold'>
+        Use the following code in your `Program.cs`. It demonstrates how to register the factory and use the engine's generic `CreateDecoder` and `CreateEncoder` methods, which will automatically select the FFmpeg implementation.
+    </Step>
+    <Step title="Run the Application" icon='lucide:play'>
+        Run the application. It will produce an `output.flac` file in the same directory.
+    </Step>
+</Steps>
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Codecs.FFMpeg;
+using SoundFlow.Structs;
+using System;
+using System.IO;
+
+public static class Program
+{
+    public static void Main()
+    {
+        Console.WriteLine("SoundFlow FFmpeg Codec Demo");
+
+        // 1. Initialize the audio engine.
+        using var engine = new MiniAudioEngine();
+
+        // 2. Instantiate the FFmpegCodecFactory.
+        var ffmpegFactory = new FFmpegCodecFactory();
+
+        // 3. Register the factory with the engine.
+        // This makes all of FFmpeg's supported formats available to the engine.
+        engine.RegisterCodecFactory(ffmpegFactory);
+        Console.WriteLine($"Registered '{ffmpegFactory.FactoryId}' with priority {ffmpegFactory.Priority}.");
+
+        // DECODING EXAMPLE
+        Console.WriteLine("\n--- Decoding input.mp3 ---");
+
+        // Prepare to store the raw audio data
+        float[]? rawAudioData = null;
+        AudioFormat decodedFormat = default;
+
+        var inputFilePath = "input.mp3";
+        if (!File.Exists(inputFilePath))
+        {
+            Console.WriteLine($"Error: Input file not found at '{Path.GetFullPath(inputFilePath)}'.");
+            return;
+        }
+
+        try
+        {
+            using var fileStream = new FileStream(inputFilePath, FileMode.Open, FileAccess.Read);
+
+            // The engine will now query the FFmpeg factory to handle the "mp3" format.
+            using var decoder = engine.CreateDecoder(fileStream, "mp3", AudioFormat.DvdHq);
+
+            Console.WriteLine($"Decoder created. Format: {decoder.SampleFormat}, Channels: {decoder.Channels}, Rate: {decoder.SampleRate} Hz");
+            Console.WriteLine($"Length: {decoder.Length / (float)decoder.Channels / decoder.SampleRate:F2} seconds.");
+
+            // Store the format for encoding later
+            decodedFormat = new AudioFormat
+            {
+                Format = decoder.SampleFormat,
+                Channels = decoder.Channels,
+                SampleRate = decoder.SampleRate,
+                Layout = AudioFormat.GetLayoutFromChannels(decoder.Channels)
+            };
+
+            // Decode the entire file into a float array
+            rawAudioData = new float[decoder.Length];
+            var samplesRead = decoder.Decode(rawAudioData);
+            Console.WriteLine($"Successfully decoded {samplesRead} samples.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during decoding: {ex.Message}");
+            return;
+        }
+
+
+        // ENCODING EXAMPLE
+        if (rawAudioData == null) return;
+
+        Console.WriteLine("\n--- Encoding to output.flac ---");
+        var outputFilePath = "output.flac";
+
+        try
+        {
+            using var fileStream = new FileStream(outputFilePath, FileMode.Create, FileAccess.Write);
+
+            // The engine will query the FFmpeg factory to handle the "flac" format.
+            // We pass the format we discovered during decoding.
+            using var encoder = engine.CreateEncoder(fileStream, "flac", decodedFormat);
+
+            var samplesWritten = encoder.Encode(rawAudioData);
+            Console.WriteLine($"Successfully encoded {samplesWritten} samples to '{outputFilePath}'.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during encoding: {ex.Message}");
+        }
+    }
+}
+```
+
+## Core Concepts
+
+### The Codec Factory System (`ICodecFactory`)
+
+The `FFmpegCodecFactory` is an implementation of the `ICodecFactory` interface, which is the cornerstone of SoundFlow's pluggable codec system. When you call `engine.CreateDecoder` or `engine.CreateEncoder`, the engine iterates through its registered factories, from highest to lowest priority, asking each one if it can handle the requested format ID.
+
+The `FFmpegCodecFactory` has three key properties:
+*   `FactoryId`: A unique string, `"SoundFlow.Codecs.FFMpeg"`.
+*   `Priority`: An integer value of `100`. This high value ensures it is queried before the default built-in `MiniAudioCodecFactory` (which has a priority of 0) for any formats they might both support (like MP3).
+*   `SupportedFormatIds`: A comprehensive read-only collection of all format identifiers (e.g., "mp3", "flac") that this factory can handle. This list is derived from the specific build configuration of the underlying FFmpeg library.
+
+### Supported Formats
+
+The `FFmpegCodecFactory` provides support for a vast array of audio formats. The exact list is determined by the native FFmpeg build included with the package, but it includes the following:
+
+*   **Lossless Formats:** `wav`, `aiff`, `flac`, `alac` (Apple Lossless), `ape` (Monkey's Audio), `wv` (WavPack), `tta` (True Audio), `shn` (Shorten)
+*   **Lossy Formats:** `mp3`, `mp2`, `ogg` (Vorbis), `opus`, `aac`, `m4a`, `wma` (Windows Media Audio), `ac3`
+*   **Container & Other Formats:** `mka` (Matroska Audio), `mpc` (Musepack), `tak` (Tom's lossless Audio Kompressor), `ra` (RealAudio), `dsf` (DSD Stream File), `au`, `gsm`
+
+### Automatic Format Detection (Probing)
+
+One of the most powerful features enabled by the FFmpeg extension is the ability to decode a stream without knowing its format beforehand. The engine's `CreateDecoder(Stream stream, out AudioFormat detectedFormat)` method will ask each registered factory to "probe" the stream. The FFmpeg factory can read the first few bytes of the stream to identify the container and codec.
+
+```csharp
+using var engine = new MiniAudioEngine();
+engine.RegisterCodecFactory(new FFmpegCodecFactory());
+
+// The file could be an MP3, FLAC, OGG, or any other supported format.
+var unknownFilePath = "some_audio_file.bin";
+
+using var fileStream = new FileStream(unknownFilePath, FileMode.Open, FileAccess.Read);
+
+try
+{
+    // The engine will use the FFmpeg factory to probe the stream.
+    using var decoder = engine.CreateDecoder(fileStream, out AudioFormat detectedFormat);
+
+    // The 'detectedFormat' struct is now populated with the correct information.
+    Console.WriteLine($"Successfully identified format!");
+    Console.WriteLine($"Channels: {detectedFormat.Channels}, Rate: {detectedFormat.SampleRate} Hz");
+
+    // You can now use the decoder as normal.
+    var samples = new float[decoder.Length];
+    decoder.Decode(samples);
+}
+catch (NotSupportedException)
+{
+    Console.WriteLine("Could not identify the audio format in the provided stream.");
+}
+```
+
+## Advanced Topics & Internals
+
+### Streaming Architecture
+
+The `FFmpegDecoder` and `FFmpegEncoder` are designed for efficiency and do not load entire files into memory. They operate directly on the provided `Stream`. This is achieved through a callback mechanism that bridges the managed .NET world with the native FFmpeg library's I/O functions.
+
+*   `ReadCallback` & `SeekCallback`: When the native decoder needs to read more data or seek within the input, it invokes these C# delegates, which in turn call `_stream.Read()` and `_stream.Seek()`.
+*   `WriteCallback`: When the native encoder produces a chunk of encoded data, it invokes this delegate, which calls `_stream.Write()` to save the data.
+
+This design ensures that even very large files can be processed with a minimal memory footprint.
+
+### Error Handling: `FFmpegException` and `FFmpegResult`
+
+If an unrecoverable error occurs within the native `soundflow-ffmpeg` library (e.g., a file is corrupt, a required codec is missing from the build), an `FFmpegException` is thrown. This exception contains a `Result` property of type `FFmpegResult`, which is a detailed enum that maps directly to the error codes from the native C API. This allows for precise error diagnosis.
+
+The possible `FFmpegResult` values are:
+
+#### General Errors
+*   `Success = 0`: The operation completed successfully.
+*   `ErrorInvalidArgs = -1`: Invalid arguments (e.g., a null pointer) were provided to a native function.
+*   `ErrorAllocationFailed = -2`: A memory allocation failed within the native library.
+
+#### Decoder-specific Errors
+*   `DecoderErrorOpenInput = -10`: Failed to open the input stream. This can happen if the format is not recognized or the data is corrupt.
+*   `DecoderErrorFindStreamInfo = -11`: Could not find or parse stream information from the input.
+*   `DecoderErrorNoAudioStream = -12`: No suitable audio stream was found in the input file.
+*   `DecoderErrorCodecNotFound = -13`: A decoder for the audio format could not be found in the linked FFmpeg build.
+*   `DecoderErrorCodecContextAlloc = -14`: Failed to allocate a context for the audio decoder.
+*   `DecoderErrorCodecOpenFailed = -15`: The audio decoder could not be opened.
+*   `DecoderErrorInvalidTargetFormat = -16`: The requested target sample format for decoding is invalid or not supported.
+*   `DecoderErrorResamplerInitFailed = -17`: The audio resampler (`swresample`) could not be initialized for format conversion.
+*   `DecoderErrorPacketFrameAlloc = -18`: Failed to allocate an `AVFrame` or `AVPacket` for the decoding process.
+*   `DecoderErrorSeekFailed = -19`: The seek operation failed in the underlying FFmpeg format context.
+*   `DecoderErrorDecodingFailed = -20`: An unrecoverable error occurred during the decoding process, such as from a corrupt packet.
+
+#### Encoder-specific Errors
+*   `EncoderErrorFormatNotFound = -30`: The requested output format (e.g., "mp3", "flac") could not be found.
+*   `EncoderErrorCodecNotFound = -31`: An encoder for the requested output format could not be found in the linked FFmpeg build.
+*   `EncoderErrorStreamAlloc = -32`: Failed to create a new audio stream in the output format context.
+*   `EncoderErrorCodecContextAlloc = -33`: Failed to allocate a context for the audio encoder.
+*   `EncoderErrorCodecOpenFailed = -34`: The audio encoder could not be opened.
+*   `EncoderErrorContextParams = -35`: Failed to copy encoder parameters to the output stream.
+*   `EncoderErrorWriteHeader = -36`: Failed to write the header for the output audio file.
+*   `EncoderErrorInvalidInputFormat = -37`: The provided input sample format for encoding is invalid or not supported.
+*   `EncoderErrorResamplerInitFailed = -38`: The audio resampler (`swresample`) could not be initialized for encoding.
+*   `EncoderErrorPacketFrameAlloc = -39`: Failed to allocate an `AVFrame` or `AVPacket` for the encoding process.
+*   `EncoderErrorEncodingFailed = -40`: An unrecoverable error occurred during the encoding process.
+*   `EncoderErrorWriteFailed = -41`: An I/O error occurred while writing the encoded data to the output stream.
+
+### Native Library Management
+
+The `SoundFlow.Codecs.FFMpeg` NuGet package is a self-contained unit. It includes the pre-compiled native `soundflow-ffmpeg` wrapper library for multiple platforms in its `runtimes` folder. When your application runs, a special `NativeLibraryResolver` automatically finds and loads the correct binary (`.dll`, `.so`, or `.dylib`) for the user's operating system and CPU architecture. This means you do not need to manually manage or deploy any native files.
+
+```
+/runtimes/
+├── win-x64/native/soundflow-ffmpeg.dll
+├── osx-arm64/native/libsoundflow-ffmpeg.dylib
+└── linux-x64/native/libsoundflow-ffmpeg.so
+... and so on for all supported platforms.
+```
+
+If you encounter a `DllNotFoundException`, it typically means your deployment environment does not match one of the included runtimes or the files were not copied correctly.

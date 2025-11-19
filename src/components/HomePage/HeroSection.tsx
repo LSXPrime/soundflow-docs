@@ -14,7 +14,7 @@ const backgroundContainerStyle: React.CSSProperties = {
 };
 
 const HeroSection: React.FC = () => {
-    const latestVersion = 'v1.2.0'; // Fallback
+    const latestVersion = 'v1.3.0'; // Fallback
 
     return (
         // Set base colors for light mode and override them for dark mode
@@ -43,7 +43,7 @@ const HeroSection: React.FC = () => {
                                 fontSize={20}
                             />
                         }
-                        href="#"
+                        href="https://github.com/LSXPrime/SoundFlow/releases"
                         radius="full"
                         variant="bordered"
                     >
@@ -57,7 +57,7 @@ const HeroSection: React.FC = () => {
                         </h1>
                         <p className="mx-0 max-w-xl text-lg text-zinc-600 dark:text-zinc-400">
                             A comprehensive .NET toolkit for sonic innovation. <br /> Build
-                            interactive music, cutting-edge pipelines, and professional audio
+                            interactive music, cutting-edge pipelines, synthesizers, and professional audio
                             tools.
                         </p>
                     </div>
