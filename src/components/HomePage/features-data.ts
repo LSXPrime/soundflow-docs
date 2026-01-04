@@ -49,6 +49,12 @@ export const keyStrengths = [
             "Save and load entire audio projects, consolidate assets, and relink missing files.",
     },
     {
+        icon: "solar:shield-check-bold-duotone",
+        title: "Advanced Security Suite",
+        description:
+            "Protect audio with encryption, verify authenticity with digital signatures, embed robust watermarks, and identify content via acoustic fingerprinting.",
+    },
+    {
         icon: "solar:soundwave-outline",
         title: "Unmatched Audio Versatility",
         description:

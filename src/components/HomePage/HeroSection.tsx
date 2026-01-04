@@ -14,7 +14,7 @@ const backgroundContainerStyle: React.CSSProperties = {
 };
 
 const HeroSection: React.FC = () => {
-    const latestVersion = 'v1.3.0'; // Fallback
+    const latestVersion = 'v1.4.0'; // Fallback
 
     return (
         // Set base colors for light mode and override them for dark mode

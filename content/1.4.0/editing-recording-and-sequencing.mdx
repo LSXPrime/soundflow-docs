@@ -1,0 +1,390 @@
+---
+id: 4.4
+title: Editing - Recording & Sequencing
+description: A comprehensive guide to recording live MIDI performances into your composition and using the Sequencer component for sample-accurate MIDI playback.
+navOrder: 4.4
+category: Editing
+---
+
+# MIDI Recording and Sequencing
+
+SoundFlow provides a sophisticated infrastructure for both capturing live MIDI performances and playing back MIDI data with sample-accurate timing. MIDI recording is managed by the powerful `composition.Recorder` service, while tempo-aware MIDI playback is handled by the `Sequencer` component.
+
+## MIDI Recording with `CompositionRecorder`
+
+The `composition.Recorder` (`SoundFlow.Editing.CompositionRecorder`) is the dedicated service for managing the entire MIDI recording workflow. It is designed to be tightly integrated with the composition's transport (playback position), listening to armed `MidiTrack`s and capturing incoming MIDI data from physical devices. It then intelligently converts this captured data into new `MidiSegment`s on the timeline.
+
+### The Recording Workflow
+
+The process is designed to mimic a real-world DAW workflow and can be broken down into four main steps:
+
+1.  **Get an Initialized MIDI Device:** Use the `MidiManager` to get a managed instance of the physical `MidiInputDevice` you want to record from.
+2.  **Arm a Track:** Tell the recorder which `MidiTrack` should receive MIDI from that specific, initialized device instance.
+3.  **Set Recording Mode:** Choose what happens when you record over existing MIDI data on the track.
+4.  **Start and Stop Recording:** Initiate and finalize the capture process.
+
+### Step 1 & 2: Obtaining a Device and Arming a Track
+
+You cannot arm a track with just device information (`MidiDeviceInfo`). The recorder requires a live, initialized `MidiInputDevice` object. The **`MidiManager`** is responsible for creating and managing the lifecycle of these device instances.
+
+The correct pattern is to use the `MidiManager` to get a managed device instance. For live recording, you will also want to set up a "monitor" route so you can hear what you are playing in real-time.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Editing;
+using SoundFlow.Midi.Devices;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Midi.Routing;
+using SoundFlow.Midi.Routing.Nodes;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using System.Linq;
+
+// Setup the audio and MIDI engines
+using var engine = new MiniAudioEngine();
+engine.UseMidiBackend(new PortMidiBackend());
+engine.UpdateMidiDevicesInfo();
+
+// Create a composition, a track to record onto, and a synthesizer to monitor the performance
+var composition = new Composition(engine, AudioFormat.DvdHq, "My Song");
+var myMidiTrack = new MidiTrack("Piano Performance");
+var synthesizer = new Synthesizer(engine, AudioFormat.DvdHq, new BasicInstrumentBank(AudioFormat.DvdHq)) { Name = "Live Synth" };
+composition.Editor.AddMidiTrack(myMidiTrack);
+
+// Register the synthesizer as a valid output target for MIDI tracks
+composition.MidiTargets.Add(new MidiTargetNode(synthesizer));
+myMidiTrack.Target = composition.MidiTargets.First();
+
+// Select the physical MIDI input device
+var inputDeviceInfo = engine.MidiInputDevices.FirstOrDefault();
+if (inputDeviceInfo.Name == null)
+{
+    Console.WriteLine("No MIDI input device found. Cannot arm track.");
+    return;
+}
+
+// Create a monitoring route from the input device to the synthesizer
+// This allows the performer to hear what they are playing in real-time.
+var monitorRoute = engine.MidiManager.CreateRoute(inputDeviceInfo, synthesizer);
+Console.WriteLine($"Live monitoring enabled: '{inputDeviceInfo.Name}' -> '{synthesizer.Name}'");
+
+// The route's source node contains the initialized device required by the recorder
+var inputNode = (MidiInputNode)monitorRoute.Source;
+var initializedDevice = inputNode.Device;
+
+// Arm the track, telling the recorder to capture MIDI from this specific device
+composition.Recorder.ArmTrackForRecording(myMidiTrack, initializedDevice);
+Console.WriteLine($"Track '{myMidiTrack.Name}' is armed for recording from '{initializedDevice.Info.Name}'.");
+```
+
+### Recording Modes
+
+The `RecordingMode` enum gives you precise control over what happens when you record over a section of the timeline that already contains MIDI data.
+
+*   **`RecordingMode.Normal`:** This is the default "destructive" or "tape-style" recording. It always creates a brand new `MidiSegment` for the recorded performance. If you record over an existing segment, the new segment will be layered on top of it, and both will play back simultaneously unless you manually delete the old one.
+
+*   **`RecordingMode.OverdubMerge`:** This mode is for building up a performance. It merges the newly recorded notes and automation directly into an existing `MidiSegment`. If no segment exists at the recording start time, it will automatically create a new one. This is perfect for adding layers to a drum pattern or correcting a few notes in a piano performance without erasing the original take.
+
+### Starting and Stopping Recording
+
+Once a track is armed, you can start and stop the recording process. The `StartRecording` method requires a `TimeSpan` to know where on the composition's timeline the recording should be placed.
+
+```csharp
+var transportTime = composition.Renderer.CurrentTime;
+
+// Example 1: Standard recording mode, which creates a new segment.
+composition.Recorder.StartRecording(transportTime, RecordingMode.Normal);
+
+// Let playback and recording continue...
+Console.WriteLine("Recording in Normal mode. Press Enter to stop.");
+Console.ReadLine();
+
+await composition.Recorder.StopRecordingAsync();
+Console.WriteLine("Recording stopped. New segment created.");
+
+
+// Example 2: Overdub recording mode, which merges into an existing segment.
+// Find a segment at the current transport time to overdub into.
+MidiSegment targetSegment = myMidiTrack.Segments.FirstOrDefault(s => s.Contains(transportTime));
+
+// StartRecording will create a new segment if none is found, even in OverdubMerge mode.
+composition.Recorder.StartRecording(transportTime, RecordingMode.OverdubMerge, targetSegment);
+
+// Let playback and recording continue...
+Console.WriteLine("Recording in OverdubMerge mode. Press Enter to stop.");
+Console.ReadLine();
+
+await composition.Recorder.StopRecordingAsync();
+Console.WriteLine("Recording stopped. Notes merged into segment.");
+```
+
+### Advanced Recording: Punch-In/Out and Loop Recording
+
+The `CompositionRecorder` supports features essential for professional recording workflows.
+
+*   **`PunchInTime` and `PunchOutTime`:** These `TimeSpan?` properties allow you to define a precise window for recording.
+*   When you call `StartRecording` and the playback time is before `PunchInTime`, the recorder enters a "waiting" state (`IsWaitingForPunchIn` will be `true`). It will automatically start capturing MIDI events only when playback reaches `PunchInTime`.
+*   If `PunchOutTime` is set, the recorder will automatically stop capturing when playback reaches that time.
+
+```csharp
+// Example: Correct a section from measure 5 to measure 9.
+var measure5Time = TimeSpan.FromSeconds(10);
+var measure9Time = TimeSpan.FromSeconds(20);
+
+// Set up the punch-in and punch-out times.
+composition.Recorder.PunchInTime = measure5Time;
+composition.Recorder.PunchOutTime = measure9Time;
+
+// Start the recorder in "waiting" mode before playback reaches the punch-in point.
+// For example, start playback from measure 1 (TimeSpan.Zero).
+composition.Recorder.StartRecording(TimeSpan.Zero);
+
+// ... start playback of the composition's renderer from the beginning ...
+
+// The recorder will automatically handle the start and stop of MIDI capture
+// precisely between 10 and 20 seconds.
+```
+*   **Loop Recording:** The recorder is aware of the composition renderer's looping. When `composition.Renderer.OnTransportLoop` is triggered (a feature you would implement in a custom transport), the recorder adds a sample offset. This ensures that notes recorded on subsequent loop passes are correctly placed on the timeline relative to the loop start, effectively creating "takes" or layers within a single recording pass.
+
+## MIDI Playback with the `Sequencer`
+
+The `Sequencer` (`SoundFlow.Synthesis.Sequencer`) is a `SoundComponent` designed for high-precision, sample-accurate playback of MIDI data from a `MidiDataProvider`.
+
+Unlike a simple file player, the `Sequencer` does not generate audio itself. Instead, it hooks into the audio render callback, using it as a high-resolution clock to dispatch MIDI events to its target at the exact sample they are meant to occur.
+
+### Key Concepts
+
+*   **Input:** It takes a `MidiDataProvider` as its source of MIDI events. This provider contains a time-ordered list of all MIDI events.
+*   **Output:** It sends MIDI messages to an `IMidiControllable` target, most commonly a `Synthesizer`.
+*   **Timing:** It is driven by the audio graph. Its `GenerateAudio` method (which does not actually write audio) is called for each audio buffer. Inside this method, it calculates which MIDI events fall within that buffer's time slice and dispatches them.
+*   **Tempo Awareness:** It uses an `ISequencerContext` (which `Composition` implements) to query the master `TempoTrack`, allowing it to handle complex tempo changes correctly, ensuring MIDI playback speeds up and slows down with the project tempo.
+
+### Standalone Sequencer Example
+
+While the `composition.Renderer` handles all sequencing automatically when you play a full project, you can also use the `Sequencer` component directly to create a standalone MIDI file player.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Metadata.Midi;
+using SoundFlow.Providers;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+
+// User-defined asset paths
+const string midiFilePath = @"C:\Path\To\Your\Song.mid";
+const string soundFontPath = @"C:\Path\To\Your\SoundFont.sf2"; // We're using a SoundFont here, but you can use any other instrument bank supported by SoundFlow
+
+// Initialize the audio engine and output device
+using var engine = new MiniAudioEngine();
+var audioFormat = AudioFormat.DvdHq;
+using var device = engine.InitializePlaybackDevice(null, audioFormat); // null for default device
+
+// Load the MIDI file and SoundFont instrument
+var midiFile = MidiFileParser.Parse(File.OpenRead(midiFilePath));
+var midiDataProvider = new MidiDataProvider(midiFile);
+var instrumentBank = new SoundFontBank(soundFontPath, audioFormat);
+
+// Create the synthesizer and sequencer
+var synthesizer = new Synthesizer(engine, audioFormat, instrumentBank);
+var sequencer = new Sequencer(engine, audioFormat, midiDataProvider, synthesizer)
+{
+    IsLooping = true // Optional: make the playback loop
+};
+
+// Build the audio processing graph
+device.MasterMixer.AddComponent(synthesizer); // The synthesizer is what actually generates audio
+device.MasterMixer.AddComponent(sequencer); // The sequencer's timing is driven by the audio graph, allowing it to send MIDI events to the synthesizer
+
+// Start playback
+device.Start();
+sequencer.Play();
+
+Console.WriteLine($"Playing '{Path.GetFileName(midiFilePath)}'. Press any key to stop.");
+Console.ReadKey();
+
+sequencer.Stop();
+device.Stop();
+```
+
+
+## Complete Recording Workflow: A Practical Example
+
+To bring all these concepts together, here is a complete, runnable console application that demonstrates the full record-and-playback workflow. It includes live monitoring, recording to a MIDI track, and then playing back the recorded performance.
+
+### Prerequisites
+
+*   A .NET Console Application project.
+*   The `SoundFlow` and `SoundFlow.Midi.PortMidi` NuGet packages installed.
+*   A physical/virtual MIDI keyboard connected to your computer.
+*   A SoundFont (`.sf2`) file (this example assumes one is available).
+
+### Full Example Code
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Editing;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Midi.Routing.Nodes;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using MidiTrack = SoundFlow.Editing.MidiTrack;
+
+namespace ConsoleApp1;
+
+public static class Program
+{
+    /// <summary>
+    /// The main entry point for the application.
+    /// </summary>
+    public static void Main()
+    {
+        Console.WriteLine("SoundFlow v1.4.0 - Full MIDI Recording Example");
+        Console.WriteLine("==============================================\n");
+
+        // 1. Setup Engine & MIDI Backend
+        using var engine = new MiniAudioEngine();
+        engine.UseMidiBackend(new PortMidiBackend());
+        engine.UpdateAudioDevicesInfo();
+        engine.UpdateMidiDevicesInfo();
+
+        // 2. Prepare Composition & Instrument
+        var format = AudioFormat.DvdHq;
+        var composition = new Composition(engine, format, "Live Recording Session");
+        var midiTrack = new MidiTrack("My Performance");
+        composition.Editor.AddMidiTrack(midiTrack);
+
+        var synthesizer = new Synthesizer(engine, format, new BasicInstrumentBank(format)) { Name = "Session Synth" };
+        composition.MidiTargets.Add(new MidiTargetNode(synthesizer));
+        midiTrack.Target = composition.MidiTargets.First();
+
+        // 3. Setup MIDI Input
+        var inputDeviceInfo = engine.MidiInputDevices.FirstOrDefault();
+        if (inputDeviceInfo.Name == null)
+        {
+            Console.WriteLine("ERROR: No MIDI input device found. Please connect a device and restart.");
+            Console.ReadKey();
+            return;
+        }
+
+        var inputNode = engine.MidiManager.GetOrCreateInputNode(inputDeviceInfo);
+        var initializedDevice = inputNode.Device;
+
+
+        // 4. Arm the Track
+        composition.Recorder.ArmTrackForRecording(midiTrack, initializedDevice);
+        Console.WriteLine($"Track '{midiTrack.Name}' is armed for recording.\n");
+
+        // 5. Setup Live MIDI Monitoring
+        var monitorRoute = engine.MidiManager.CreateRoute(inputDeviceInfo, synthesizer);
+        Console.WriteLine($"Live monitoring enabled: '{inputDeviceInfo.Name}' -> '{synthesizer.Name}'");
+
+
+        // 6. Initialize Audio Playback
+        using var device = engine.InitializePlaybackDevice(null, format);
+        Console.WriteLine($"Audio output initialized on: {device.Info?.Name}\n");
+
+        // 7. Add Components to MasterMixer
+        device.MasterMixer.AddComponent(synthesizer);
+        var compositionPlayer = new SoundPlayer(engine, format, composition.Renderer);
+        device.MasterMixer.AddComponent(compositionPlayer);
+
+        // 8. Interactive Session
+        var isRecording = false;
+        try
+        {
+            device.Start();
+
+            while (true)
+            {
+                Console.WriteLine("--- MENU");
+                Console.WriteLine("1. Start Recording (Normal)");
+                Console.WriteLine("2. Stop Recording");
+                Console.WriteLine("3. Playback Composition");
+                Console.WriteLine("4. Exit");
+                Console.Write("Select an option: ");
+                var key = Console.ReadKey(true).Key;
+                Console.WriteLine(key.ToString().Last());
+
+                switch (key)
+                {
+                    case ConsoleKey.D1:
+                        if (isRecording)
+                        {
+                            Console.WriteLine("Already recording.");
+                            break;
+                        }
+
+                        Console.WriteLine("\n*** RECORDING STARTED ***\nPlay on your MIDI device. Press '2' to stop.");
+                        isRecording = true;
+                        compositionPlayer.Seek(0);
+                        composition.Recorder.StartRecording(composition.Renderer.CurrentTime, RecordingMode.Normal);
+                        compositionPlayer.Play();
+                        break;
+
+                    case ConsoleKey.D2:
+                        if (!isRecording)
+                        {
+                            Console.WriteLine("Not currently recording.");
+                            break;
+                        }
+
+                        Console.WriteLine("\n*** RECORDING STOPPED ***");
+                        isRecording = false;
+                        composition.Recorder.StopRecording();
+                        compositionPlayer.Stop();
+                        var recordedSegment = midiTrack.Segments.LastOrDefault();
+                        if (recordedSegment != null)
+                        {
+                            Console.WriteLine($"A new MIDI segment '{recordedSegment.Name}' was created with a duration of {recordedSegment.SourceDuration:ss\\.fff}s.");
+                        }
+
+                        break;
+
+                    case ConsoleKey.D3:
+                        if (isRecording)
+                        {
+                            Console.WriteLine("Please stop recording first.");
+                            break;
+                        }
+
+                        if (midiTrack.Segments.Count == 0)
+                        {
+                            Console.WriteLine("Nothing to play back. Record something first.");
+                            break;
+                        }
+
+                        // Remove Synthesizer from MasterMixer to prevent feedback
+                        device.MasterMixer.RemoveComponent(synthesizer);
+
+                        Console.WriteLine("\n*** PLAYING BACK COMPOSITION ***");
+                        compositionPlayer.Seek(0);
+                        compositionPlayer.Play();
+                        break;
+
+                    case ConsoleKey.D4:
+                        Console.WriteLine("Exiting...");
+                        return;
+
+                    default:
+                        Console.WriteLine("Invalid option.");
+                        break;
+                }
+
+                Console.WriteLine();
+            }
+        }
+        finally
+        {
+            Console.WriteLine("\nShutting down...");
+            compositionPlayer.Stop();
+            device.Stop();
+            engine.MidiManager.RemoveRoute(monitorRoute);
+            composition.Dispose();
+        }
+    }
+}
+```

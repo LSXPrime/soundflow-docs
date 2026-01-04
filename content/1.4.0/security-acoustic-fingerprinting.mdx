@@ -1,0 +1,200 @@
+﻿---
+id: 24
+title: Acoustic Fingerprinting
+description: Learn how to identify audio content programmatically by generating and matching robust spectral fingerprints.
+navOrder: 24
+category: Security
+---
+
+import { Steps, Step } from '/src/components/Shared/Steps';
+
+# Acoustic Fingerprinting
+
+Acoustic fingerprinting is a technology that allows software to "listen" to an audio clip and identify it by matching it against a database of known tracks. Unlike watermarking, it does not modify the source audio. Instead, it analyzes the audio's unique spectral characteristics (peaks in the frequency domain over time) to generate a compact digital signature.
+
+SoundFlow's implementation is resilient to:
+*   **Noise:** Background chatter or hiss.
+*   **Distortion:** Overdrive or poor recording quality.
+*   **compression:** MP3/AAC artifacts.
+*   **Capturing:** Recording a speaker with a microphone (to an extent).
+
+## Core Components
+
+The system is built around three main components:
+
+1.  **`AudioIdentifier`**: The high-level static class for generating fingerprints and running queries.
+2.  **`AudioFingerprint`**: A data object containing the list of generated hashes and metadata.
+3.  **`IFingerprintStore`**: An interface for the database that stores fingerprints. We provide an `InMemoryFingerprintStore` for testing, but for production, you would implement this for SQL, Redis, or MongoDB.
+
+## 1. Building a Fingerprint Database
+
+Before you can identify audio, you need a database of "known" tracks. This process involves loading your reference audio files, generating their fingerprints, and storing them.
+
+### Step-by-Step Guide
+
+<Steps>
+    <Step title="Initialize Store" icon="carbon:data-base">
+        Create an instance of the store. For this example, we'll use the in-memory version.
+
+        ```csharp
+        using SoundFlow.Security;
+        using SoundFlow.Security.Stores;
+        using SoundFlow.Security.Configuration;
+        using SoundFlow.Providers;
+
+        // 1. Create the store (In a real app, this would be a persistent database)
+        var store = new InMemoryFingerprintStore();
+        
+        // 2. Configure fingerprinting (Optional, defaults are usually fine)
+        var config = new FingerprintConfiguration
+        {
+            // Tuning for accuracy vs. storage size
+            FftSize = 2048,           
+            MinConfidenceThreshold = 15 
+        };
+
+        using var engine = new MiniAudioEngine();
+        ```
+    </Step>
+    <Step title="Ingest Tracks" icon="lucide:library">
+        Loop through your music library, generate fingerprints, and insert them into the store.
+
+        ```csharp
+        var referenceTracks = new[] 
+        { 
+            "Library/SongA.mp3", 
+            "Library/SongB.wav", 
+            "Library/SongC.flac" 
+        };
+
+        foreach (var filePath in referenceTracks)
+        {
+            Console.WriteLine($"Processing {filePath}...");
+
+            // 1. Load the audio
+            using var provider = new AssetDataProvider(engine, filePath);
+
+            // 2. Generate the fingerprint
+            // This reads the entire file and analyzes spectral peaks.
+            var fingerprint = AudioIdentifier.GenerateFingerprint(provider, config);
+
+            // 3. Assign a meaningful ID (e.g., filename or database PK)
+            fingerprint.TrackId = Path.GetFileName(filePath);
+
+            // 4. Store it
+            await store.InsertAsync(fingerprint);
+            
+            Console.WriteLine($"Indexed {fingerprint.TrackId}: {fingerprint.Hashes.Count} hashes.");
+        }
+        
+        Console.WriteLine("Database build complete.");
+        ```
+    </Step>
+</Steps>
+
+## 2. Identifying Unknown Audio
+
+Now that you have a database, you can identify unknown audio clips. This is often done with a short recording (e.g., 10-30 seconds) captured from a microphone or extracted from a stream.
+
+```csharp
+// 1. Load the query audio (the "unknown" clip)
+// Let's pretend we recorded 15 seconds of "SongB" with a microphone.
+using var queryProvider = new AssetDataProvider(engine, "recordings/unknown_clip.wav");
+
+Console.WriteLine("Identifying clip...");
+
+// 2. Run the identification
+var result = await AudioIdentifier.IdentifyAsync(queryProvider, store, config);
+
+// 3. Check results
+if (result.IsSuccess && result.Value is not null)
+{
+    Console.WriteLine("--- MATCH FOUND ---");
+    Console.WriteLine($"Track ID:   {result.Value.TrackId}");
+    Console.WriteLine($"Confidence: {result.Value.Confidence}"); // Higher is better
+    
+    // This tells you WHERE in the original song the clip matches.
+    // e.g., "Match starts at 01:23 in the original track"
+    Console.WriteLine($"Offset:     {TimeSpan.FromSeconds(result.Value.MatchTimeSeconds)}");
+    Console.WriteLine($"Time Taken: {result.Value.ProcessingTime.TotalMilliseconds}ms");
+}
+else
+{
+    Console.WriteLine("No match found.");
+}
+```
+
+## Advanced: Custom Database Implementation
+
+For production applications with thousands or millions of songs, `InMemoryFingerprintStore` will run out of RAM. You need to implement `IFingerprintStore` to connect to a real database.
+
+The interface is simple:
+
+```csharp
+public interface IFingerprintStore
+{
+    // Save a fingerprint's hashes to the DB
+    Task InsertAsync(AudioFingerprint fingerprint);
+
+    // Find all tracks that contain a specific hash
+    Task<List<FingerprintMatchCandidate>> QueryHashAsync(uint hash);
+}
+```
+
+### Database Schema Strategy
+
+Because fingerprinting relies on matching thousands of hashes, a key-value store or a database with fast indexing is essential.
+
+**Conceptual SQL Schema:**
+
+| Column       | Type            | Description                                                         |
+|:-------------|:----------------|:--------------------------------------------------------------------|
+| `Hash`       | `INT` (Indexed) | The 32-bit hash generated by the analyzer. This is your lookup key. |
+| `TrackId`    | `VARCHAR`       | The ID of the song.                                                 |
+| `TimeOffset` | `INT`           | The time offset (in frames) where this hash occurs.                 |
+
+**Example Custom Implementation (Pseudocode):**
+
+```csharp
+public class SqlFingerprintStore : IFingerprintStore
+{
+    private readonly string _connectionString;
+
+    public async Task InsertAsync(AudioFingerprint fingerprint)
+    {
+        // Bulk insert is highly recommended here!
+        // INSERT INTO Fingerprints (Hash, TrackId, TimeOffset) VALUES ...
+        foreach(var h in fingerprint.Hashes)
+        {
+            await _db.ExecuteAsync(
+                "INSERT INTO Fingerprints VALUES (@Hash, @TrackId, @TimeOffset)", 
+                new { h.Hash, fingerprint.TrackId, h.TimeOffset });
+        }
+    }
+
+    public async Task<List<FingerprintMatchCandidate>> QueryHashAsync(uint hash)
+    {
+        // SELECT TrackId, TimeOffset FROM Fingerprints WHERE Hash = @Hash
+        // This query runs thousands of times per identification, so it MUST be fast.
+        return await _db.QueryAsync<FingerprintMatchCandidate>(
+            "SELECT TrackId, TimeOffset FROM Fingerprints WHERE Hash = @Hash", 
+            new { Hash = hash });
+    }
+}
+```
+
+## Performance Tuning
+
+The `FingerprintConfiguration` class allows you to tune the system for your specific needs.
+
+| Property                 | Default | Effect                                                                                                                          |
+|:-------------------------|:--------|:--------------------------------------------------------------------------------------------------------------------------------|
+| `MinConfidenceThreshold` | `25`    | **Higher:** Fewer false positives, but might miss short clips.<br/>**Lower:** Detects shorter clips, but risk of false matches. |
+| `MinRelativeConfidence`  | `0.05`  | Requires a % of query hashes to match. Prevents random collisions in long recordings.                                           |
+| `TargetZoneSize`         | `3`     | **Higher:** More robust to speed changes, but generates many more hashes (slower DB).<br/>**Lower:** Faster, fewer hashes.      |
+| `MinPeakMagnitude`       | `0.01`  | **Higher:** Ignores quiet background noise, focuses on loud peaks.<br/>**Lower:** Captures detail in quiet sections.            |
+
+### Optimization Tips
+
+1.  **Query Duration:** You rarely need more than 10-15 seconds of audio to identify a track. Processing 5 minutes of audio as a query is wasteful.
+3.  **Database Indexing:** Ensure your `Hash` column is clustered or heavily indexed. The read speed of `QueryHashAsync` is the single biggest bottleneck in large-scale systems.

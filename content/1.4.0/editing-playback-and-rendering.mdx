@@ -1,0 +1,151 @@
+---
+id: 4.3
+title: Editing - Playback and Rendering
+description: Learn how to play back your entire composition in real-time and how to render it to an audio file for export.
+navOrder: 4.3
+category: Editing
+---
+
+import {Icon} from "@iconify/react";
+
+# Playback and Rendering
+
+Once you have built a `Composition` with audio and MIDI tracks, you can play it back in real time or render it offline to an audio file. Both of these operations are handled by the `composition.Renderer` service.
+
+## Live Playback
+
+The `composition.Renderer` (`SoundFlow.Editing.CompositionRenderer`) is a special service that also implements the `ISoundDataProvider` interface. This clever design allows your entire, complex composition to be treated as a single, playable audio source.
+
+When a `SoundPlayer` requests audio from the `composition.Renderer`, the renderer performs several steps in real-time on the audio thread:
+1.  It calculates the current time and the time of the next audio buffer.
+2.  It determines which MIDI events from all active `MidiTrack`s fall within that time window, using the master `TempoTrack` for accurate timing.
+3.  It dispatches those MIDI events to their respective targets (e.g., `Synthesizer` instances).
+4.  It asks all active `Track`s to render their audio segments for the same time window.
+5.  It asks all active `Synthesizer` instances (and other audio-generating MIDI targets) to render their audio for the time window.
+6.  It mixes all the audio from audio tracks and synthesizers together.
+7.  It applies master effects (`Modifiers` and `Analyzers`) from the `Composition`.
+8.  It applies the `MasterVolume`.
+9.  It returns the final mixed audio buffer to the `SoundPlayer`.
+
+### Example: Playing a Full Composition
+
+This example ties everything together, showing how to play a composition that contains both an audio track and a MIDI track driving a synthesizer.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Editing;
+using SoundFlow.Midi.Routing.Nodes;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using MidiTrack = SoundFlow.Editing.MidiTrack;
+
+// Set up the engine and a composition to hold our tracks
+using var engine = new MiniAudioEngine();
+var format = AudioFormat.DvdHq;
+var composition = new Composition(engine, format, "Full Playback Demo");
+
+// Create a synthesizer and register it as a MIDI target within the composition.
+// The composition will manage sending MIDI to it and getting audio from it.
+var instrumentBank = new BasicInstrumentBank(format);
+var synthesizer = new Synthesizer(engine, format, instrumentBank) { Name = "Piano" };
+composition.MidiTargets.Add(new MidiTargetNode(synthesizer));
+
+// Create a MIDI track that sends its data to the synthesizer
+var midiTrack = new MidiTrack("Piano Melody") { Target = composition.MidiTargets[0] };
+composition.Editor.AddMidiTrack(midiTrack);
+
+// Create and populate the MIDI sequence
+var sequence = new MidiSequence(composition.TicksPerQuarterNote, [], [], [], []);
+long tick = 0;
+var quarterNote = composition.TicksPerQuarterNote;
+var wholeNote = quarterNote * 4;
+int[] scaleUp = { 60, 62, 64, 65, 67, 69, 71, 72 };
+foreach (var noteNumber in scaleUp) { sequence.AddNote(tick, quarterNote, noteNumber, 100); tick += quarterNote; }
+sequence.AddNote(tick, wholeNote, 60, 110);
+sequence.AddNote(tick, wholeNote, 64, 110);
+sequence.AddNote(tick, wholeNote, 67, 110);
+midiTrack.AddSegment(new MidiSegment(sequence, TimeSpan.Zero));
+
+// Create an audio track and add a segment from a file
+var audioTrack = new Track("Sound Effect");
+composition.Editor.AddTrack(audioTrack);
+composition.Editor.CreateAndAddSegmentFromFile(
+    audioTrack,
+    "path/to/your/drum_loop.wav",
+    TimeSpan.FromSeconds(1) // Offset it slightly to hear it clearly after the scale starts
+);
+
+// Initialize the default audio output device
+using var device = engine.InitializePlaybackDevice(engine.PlaybackDevices.First(d => d.IsDefault), format);
+
+
+// The composition.Renderer is a data provider that renders the entire project in real-time.
+var compositionPlayer = new SoundPlayer(engine, format, composition.Renderer);
+device.MasterMixer.AddComponent(compositionPlayer);
+
+// Start the device and play the composition
+device.Start();
+compositionPlayer.Play();
+
+Console.WriteLine($"Playing composition '{composition.Name}', with Duration {composition.Editor.CalculateTotalDuration()}. Press any key to stop.");
+Console.ReadKey();
+
+// Clean up
+Console.WriteLine("\nPlayback stopped.");
+compositionPlayer.Stop();
+device.Stop();
+composition.Dispose();
+```
+
+## Offline Rendering
+
+Offline rendering (also called "bouncing" or "exporting") is the process of generating the final mix of your composition into an audio buffer, which you can then save to a file. This is also handled by the `composition.Renderer`.
+
+The `composition.Renderer.Render(TimeSpan startTime, TimeSpan duration, Span<float> outputBuffer)` method performs the same mixing logic as live playback but does it as fast as the CPU allows, filling a buffer you provide.
+
+### Example: Rendering to a WAV File
+
+This example shows how to render the entire composition and save it as a WAV file.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Editing;
+using System;
+using System.IO;
+using System.Threading.Tasks;
+
+public async Task RenderCompositionToFile(AudioEngine engine, Composition composition, string outputFilePath)
+{
+    Console.WriteLine("Starting offline render...");
+
+    // Get the total duration of the composition.
+    var totalDuration = composition.Editor.CalculateTotalDuration();
+    if (totalDuration <= TimeSpan.Zero)
+    {
+        Console.WriteLine("Composition is empty. Nothing to render.");
+        return;
+    }
+
+    // var renderBuffer = composition.Renderer.Render(); // This will render the entire composition into a buffer in a single operation, but below is a more fine-grained example.
+
+    // Calculate the required buffer size based on the composition's format and duration.
+    var format = composition.Format;
+    var totalSamples = (int)(totalDuration.TotalSeconds * format.SampleRate * format.Channels);
+    var renderBuffer = new float[totalSamples];
+
+    // Render the entire composition into the buffer in a single operation.
+    composition.Renderer.Render(TimeSpan.Zero, totalDuration, renderBuffer);
+
+    Console.WriteLine("Render complete. Now encoding to WAV...");
+
+    // Use the engine's built-in encoder to save the raw audio buffer to a WAV file.
+    await using var fileStream = new FileStream(outputFilePath, FileMode.Create);
+    using var encoder = engine.CreateEncoder(fileStream, "wav", format);
+    
+    encoder.Encode(renderBuffer);
+
+    Console.WriteLine($"Successfully saved to {outputFilePath}");
+}
+```

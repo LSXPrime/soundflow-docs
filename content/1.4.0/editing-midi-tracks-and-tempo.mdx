@@ -1,0 +1,262 @@
+---
+id: 4.2
+title: Editing - MIDI Tracks & The Master Tempo
+description: A deep dive into creating and editing MIDI tracks, programmatically manipulating notes and automation, and managing the master tempo track that governs all timing.
+navOrder: 4.2
+category: Editing
+---
+
+# Working with MIDI Tracks & The Master Tempo
+
+SoundFlow v1.3 elevates MIDI to a first-class citizen within the editing engine, providing a comprehensive data model and powerful tools for programmatic MIDI sequencing. This guide offers a deep dive into the MIDI track system and its critical relationship with the new master `TempoTrack`.
+
+## The Master Tempo Track
+
+At the core of all time-based operations in a v1.3 `Composition` is the **`TempoTrack`**. This is the project's central clock and rhythmic authority.
+
+*   **Structure:** The `TempoTrack` is a `List<TempoMarker>` on the `Composition` object.
+*   **`TempoMarker`:** A simple but crucial record struct containing:
+    *   `TimeSpan Time`: The absolute timeline position where the tempo change occurs.
+    *   `double BeatsPerMinute`: The new tempo that takes effect at that time.
+*   **Global Timing Authority:** The `TempoTrack` is the **single source of truth** for all conversions between real time (`TimeSpan`) and musical time (MIDI ticks). The `Sequencer`, `MidiRecorder`, `MidiQuantizer`, and all editing methods that deal with time rely on it for sample-accurate timing calculations, especially in projects with tempo changes.
+
+### Manipulating the Tempo Track
+
+You can programmatically define a complex tempo map for your composition using the `composition.Editor`.
+
+```csharp
+using SoundFlow.Editing;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// Assuming 'composition' is an existing Composition instance.
+
+// A new composition always starts with a default tempo of 120 BPM at time zero.
+// Let's change the initial tempo to 110 BPM.
+composition.Editor.SetTempo(TimeSpan.Zero, 110.0);
+
+// Add a tempo change: a ritardando (slowing down) to 95 BPM at measure 16,
+// assuming a 4/4 time signature and the current tempo.
+var timeAtMeasure16 = CalculateTimeForMeasure(
+    composition.TempoTrack,
+    ticksPerQuarterNote: composition.TicksPerQuarterNote,
+    timeSignatureNumerator: 4,
+    timeSignatureDenominator: 4,
+    targetMeasure: 16
+);
+composition.Editor.SetTempo(timeAtMeasure16, 95.0);
+
+
+// Add another tempo change: an accelerando (speeding up) to 140 BPM at 1 minute.
+composition.Editor.SetTempo(TimeSpan.FromMinutes(1), 140.0);
+
+// You can also query the tempo at any point in time.
+var tempoAt45Seconds = composition.Editor.GetTempoAtTime(TimeSpan.FromSeconds(45));
+Console.WriteLine($"Tempo at 45s: {tempoAt45Seconds.BeatsPerMinute} BPM"); // Outputs: 95.0
+
+
+/// <summary>
+/// A detailed helper function to calculate the exact real-time TimeSpan for the start of a given measure.
+/// This demonstrates how to work with the tempo track to convert musical time to absolute time.
+/// NOTE: A production application would also need to handle a TimeSignatureTrack for complete accuracy.
+/// </summary>
+public static TimeSpan CalculateTimeForMeasure(
+    IReadOnlyList<TempoMarker> tempoTrack,
+    int ticksPerQuarterNote,
+    int timeSignatureNumerator,
+    int timeSignatureDenominator,
+    int targetMeasure)
+{
+    if (targetMeasure <= 1)
+    {
+        return TimeSpan.Zero;
+    }
+
+    double totalSeconds = 0;
+    long totalTicks = 0;
+    
+    // Calculate the number of ticks per measure for the given time signature.
+    var ticksPerBeat = ticksPerQuarterNote * (4.0 / timeSignatureDenominator);
+    var ticksPerMeasure = (long)(ticksPerBeat * timeSignatureNumerator);
+
+    var targetTicks = ticksPerMeasure * (targetMeasure - 1);
+
+    long lastTick = 0;
+    double currentBpm = tempoTrack.First().BeatsPerMinute;
+
+    // Iterate through the tempo map to calculate the elapsed time segment by segment.
+    foreach (var marker in tempoTrack)
+    {
+        // Get the tick position of the current tempo marker. This is a recursive-like problem,
+        // so we calculate the time of the marker itself to find its tick position.
+        var markerTick = MidiTimeConverter.GetTickForTimeSpan(marker.Time, ticksPerQuarterNote, tempoTrack);
+
+        if (targetTicks <= markerTick)
+        {
+            // The target measure is within the current tempo segment.
+            var ticksInThisSegment = targetTicks - lastTick;
+            var secondsPerTick = 60.0 / (currentBpm * ticksPerQuarterNote);
+            totalSeconds += ticksInThisSegment * secondsPerTick;
+            return TimeSpan.FromSeconds(totalSeconds);
+        }
+
+        // The target measure is after this tempo segment, so add the full duration of this segment.
+        var segmentDurationTicks = markerTick - lastTick;
+        totalSeconds += (60.0 / (currentBpm * ticksPerQuarterNote)) * segmentDurationTicks;
+
+        // Update state for the next segment.
+        lastTick = markerTick;
+        currentBpm = marker.BeatsPerMinute;
+    }
+
+    // If the target is after the last tempo marker, calculate the remaining time.
+    var remainingTicks = targetTicks - lastTick;
+    totalSeconds += (60.0 / (currentBpm * ticksPerQuarterNote)) * remainingTicks;
+
+    return TimeSpan.FromSeconds(totalSeconds);
+}
+```
+
+## The MIDI Data Hierarchy
+
+To provide a powerful and non-destructive editing experience, MIDI data is organized into a clear hierarchy.
+
+1.  **`MidiTrack`:** The top-level timeline container. It holds `MidiSegment`s and routes their MIDI output.
+2.  **`MidiSegment`:** A "clip" of MIDI data on the track's timeline. It contains a single `MidiSequence`.
+3.  **`MidiSequence`:** A mutable, in-memory container for all the MIDI events within a segment. It synchronizes a user-friendly object model (`MidiNote`, `ControlPoint`) with the low-level event stream needed for playback.
+4.  **`MidiNote` & `ControlPoint`:** These are the high-level, editable objects you programmatically interact with. They represent the actual musical and automation data.
+
+### `MidiTrack`
+
+The `MidiTrack` (`SoundFlow.Editing.MidiTrack`) is the main container for MIDI data on the timeline.
+
+*   **`Target` Property:** This is the track's most important property. It defines the `IMidiDestinationNode` where all its MIDI events will be sent. The target can be:
+    *   An internal `Synthesizer` component (wrapped in a `MidiTargetNode`).
+    *   A physical MIDI output port (wrapped in a `MidiOutputNode`).
+*   **`TrackSettings`:** A `MidiTrack` uses the `TrackSettings` class for mute, solo, and enable states. It also has a `MidiModifiers` list, allowing you to chain real-time MIDI effects like arpeggiators or transposer plugins.
+
+### `MidiSegment` and `MidiSequence`
+
+*   A `MidiSegment` is a container that places a block of MIDI data onto the composition's timeline. It has a `TimelineStartTime` and a `Name`.
+*   Its core content is the `MidiSequence`. The `MidiSequence` is a powerful data structure that holds all the notes and automation for that segment. When you edit MIDI, you are modifying the `MidiSequence`.
+
+### `MidiNote` and `ControlPoint`
+
+These are the fundamental, editable data objects.
+
+*   **`MidiNote`:** Represents a single musical note.
+    *   `Id` (Guid): A unique ID for reliably targeting the note in editing operations.
+    *   `StartTick` (long): The note's start time in absolute MIDI ticks from the beginning of its parent `MidiSequence`.
+    *   `DurationTicks` (long): The note's duration in MIDI ticks.
+    *   `NoteNumber` (int): The MIDI pitch (0-127).
+    *   `Velocity` (int): The note-on velocity (1-127).
+*   **`ControlPoint`:** Represents a single automation point.
+    *   `Id` (Guid): A unique ID.
+    *   `Tick` (long): The absolute time of the event in MIDI ticks.
+    *   `Value` (int): The event's value (0-127 for CC, or 0-16383 for 14-bit Pitch Bend).
+
+## Example: Creating a MIDI Track with a Synthesizer
+
+This complete, detailed example shows the entire process of setting up an internal synthesizer, creating a MIDI track to control it, and programmatically writing a musical phrase with notes and automation.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Editing;
+using SoundFlow.Enums;
+using SoundFlow.Midi.Routing.Nodes;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using MidiTrack = SoundFlow.Editing.MidiTrack;
+
+// The Composition is the top-level container for all tracks, segments, and timeline information.
+using var engine = new MiniAudioEngine();
+var format = AudioFormat.DvdHq;
+var composition = new Composition(engine, format, "Programmatic MIDI Demo");
+
+// Set the project's time division; 480 is a common standard offering high editing resolution.
+composition.Editor.SetTicksPerQuarterNote(480);
+
+// Create a bank of simple, built-in synthesizer sounds.
+var instrumentBank = new BasicInstrumentBank(format);
+// The Synthesizer component is the sound source that will generate audio from MIDI events.
+var synthesizer = new Synthesizer(engine, format, instrumentBank)
+{
+    Name = "Lead Synth" // Give it a unique name for targeting
+};
+
+// Register the synthesizer as a named MIDI target within the composition for routing.
+composition.MidiTargets.Add(new MidiTargetNode(synthesizer));
+
+// A MidiTrack holds MIDI data and routes it to a specific target.
+var midiTrack = new MidiTrack("Synth Melody")
+{
+    // Route this track's output to the previously registered "Lead Synth" target.
+    Target = composition.MidiTargets.FirstOrDefault(t => t.Name == synthesizer.Name)
+};
+
+// Add the configured track to the project.
+composition.Editor.AddMidiTrack(midiTrack);
+
+// A MidiSequence contains the raw note and automation data, independent of its position on the timeline.
+var sequence = new MidiSequence(composition.TicksPerQuarterNote,
+    [],
+    [],
+    [],
+    []);
+
+// A MidiSegment places a sequence onto a track at a specific start time.
+var midiSegment = new MidiSegment(sequence, TimeSpan.Zero, "Main Melody");
+
+midiTrack.AddSegment(midiSegment);
+
+// Use the Editor service to programmatically add MIDI events to the segment's sequence.
+long ticksPerQuarter = composition.TicksPerQuarterNote;
+var ticksPerEighth = ticksPerQuarter / 2;
+
+// Add notes to the segment's sequence using absolute tick positions.
+composition.Editor.AddNoteToSegment(midiSegment, 0 * ticksPerEighth, ticksPerEighth, 60, 100);
+composition.Editor.AddNoteToSegment(midiSegment, 1 * ticksPerEighth, ticksPerEighth, 63, 90);
+composition.Editor.AddNoteToSegment(midiSegment, 2 * ticksPerEighth, ticksPerEighth, 67, 110);
+composition.Editor.AddNoteToSegment(midiSegment, 3 * ticksPerEighth, ticksPerEighth, 72, 100);
+
+long lastNoteStart = 3 * ticksPerEighth;
+long lastNoteEnd = lastNoteStart + ticksPerEighth;
+
+// Add pitch bend automation; controller number -1 is reserved for pitch bend (range 0-16383, center 8192).
+composition.Editor.AddControlPointToSegment(midiSegment, -1, lastNoteStart, 8192);
+composition.Editor.AddControlPointToSegment(midiSegment, -1, lastNoteEnd, 10240);
+
+// Add automation for a standard MIDI CC controller (e.g., CC 74 for filter cutoff/brightness).
+composition.Editor.AddControlPointToSegment(midiSegment, 74, 0, 40);
+composition.Editor.AddControlPointToSegment(midiSegment, 74, ticksPerQuarter, 127);
+composition.Editor.AddControlPointToSegment(midiSegment, 74, lastNoteEnd, 60);
+
+
+// The full playback setup is covered in the "Playback and Rendering" guide. In summary:
+
+// Initialize the physical audio output device.
+using var device = engine.InitializePlaybackDevice(null, format);
+
+// Add the audio-generating synthesizer to the master mixer to be heard.
+device.MasterMixer.AddComponent(synthesizer);
+
+// The composition's Renderer drives playback timing and dispatches MIDI events.
+var player = new SoundPlayer(engine, format, composition.Renderer);
+// Add the composition renderer to the mixer to process the timeline.
+device.MasterMixer.AddComponent(player);
+
+device.Start();
+player.Play();
+
+Console.WriteLine($"Playing composition '{composition.Name}', with Duration {composition.Editor.CalculateTotalDuration()}. Press any key to stop.");
+Console.ReadKey();
+
+// Clean up
+Console.WriteLine("\nPlayback stopped.");
+player.Stop();
+device.Stop();
+composition.Dispose();
+```

@@ -142,4 +142,24 @@ export const mdxComponents = {
         );
     },
     hr: () => <Divider className="my-8"/>,
+    table: (props: any) => (
+        <div className="w-full overflow-x-auto mb-8 rounded-lg border border-divider">
+            <table className="w-full border-collapse text-left text-sm" {...props} />
+        </div>
+    ),
+    thead: (props: any) => (
+        <thead className="bg-content2 text-foreground font-semibold border-b border-divider" {...props} />
+    ),
+    tbody: (props: any) => (
+        <tbody className="divide-y divide-divider" {...props} />
+    ),
+    tr: (props: any) => (
+        <tr className="hover:bg-content2/50 transition-colors" {...props} />
+    ),
+    th: (props: any) => (
+        <th className="px-4 py-3 font-semibold" {...props} />
+    ),
+    td: (props: any) => (
+        <td className="px-4 py-3 text-foreground/80" {...props} />
+    ),
 };

@@ -1,0 +1,246 @@
+﻿---
+id: 1.1
+title: Migration Guide (v1.3 to v1.4)
+description: A guide to updating your code from SoundFlow v1.3.x to v1.4.0, covering breaking changes and introducing the new security suite.
+navOrder: 1.1
+category: Core
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs} from "@heroui/react";
+import { Card, CardHeader, CardBody } from "@heroui/react";
+
+# Migration Guide: v1.3.0 to v1.4.0
+
+Welcome to SoundFlow v1.4.0! This is a major release focused on security, robustness, and forward-looking compatibility with modern .NET runtimes like NativeAOT. It introduces a comprehensive suite of security features for audio protection, authentication, and identification.
+
+To enhance API safety and provide more explicit error handling, a few core APIs have been refactored. This guide will walk you through each breaking change with clear before-and-after examples to ensure a smooth migration.
+
+## High-Level Architectural Changes
+
+The breaking changes in v1.4.0 support three key architectural goals:
+
+1.  **Security-First Distribution:** The new `SoundFlow.Security` namespace provides a complete toolkit for enterprise-grade audio protection, including encryption, digital signatures, watermarking, and acoustic fingerprinting.
+2.  **API Robustness and Correctness:** Key APIs have been updated to return `Result<T>` objects instead of throwing exceptions for predictable errors. Interfaces now use `ReadOnlySpan<T>` where appropriate to enforce immutability and prevent unintended side effects.
+3.  **NativeAOT Compatibility:** The project persistence layer has been overhauled with source-generated JSON contexts and a new `TypeRegistry` to ensure that projects with custom components can be saved and loaded in trimmed or NativeAOT-compiled applications.
+
+## Breaking Changes in Detail
+
+Here is a step-by-step guide to updating your code for each breaking change.
+
+<div className="mt-6"> {/* Optional: Adds initial space before the first card */}
+    <Card className="bg-content1">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="lucide:shield-check" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">1. Recorder API Now Returns `Result`</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            The `Recorder` methods (`StartRecording`, `PauseRecording`, `ResumeRecording`, `StopRecordingAsync`) now return a `Result` or `Task<Result>` instead of `void`. This provides explicit, non-exceptional error handling.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> To provide robust error handling for common scenarios (e.g., trying to stop a recorder that is already stopped) without relying on costly exceptions, making application logic more predictable.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="Recorder API Changes" className="mt-4">
+                <Tab key="before" title="Before (v1.3.0)">
+                    ```csharp
+                    var recorder = new Recorder(captureDevice, "output.wav");
+                    
+                    // These methods were fire-and-forget.
+                    recorder.StartRecording();
+
+                    // ... later ...
+                    await recorder.StopRecordingAsync();
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.4.0)">
+                    ```csharp
+                    var recorder = new Recorder(captureDevice, "output.wav");
+
+                    // Methods now return a Result to be checked.
+                    var startResult = recorder.StartRecording();
+                    if (startResult.IsFailure)
+                    {
+                        Console.WriteLine($"Failed to start recording: {startResult.Error?.Message}");
+                        return;
+                    }
+
+                    // ... later ...
+                    var stopResult = await recorder.StopRecordingAsync();
+                    if (stopResult.IsFailure)
+                    {
+                        Console.WriteLine($"Failed to stop recording: {stopResult.Error?.Message}");
+                    }
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+
+    <Card className="bg-content1 mt-6">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="lucide:file-check-2" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">2. API Correctness: `ReadOnlySpan<T>` for Analysis</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            Methods on `AudioAnalyzer` and `IVisualizer` that process audio buffers now accept `ReadOnlySpan<float>` instead of `Span<float>`.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> To improve API safety and correctness. These components are designed to read and analyze audio data, not modify it. `ReadOnlySpan<T>` enforces this contract at compile time.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="ReadOnlySpan Changes" className="mt-4">
+                <Tab key="before" title="Before (v1.3.0)">
+                    ```csharp
+                    // In your custom analyzer
+                    public class MyAnalyzer : AudioAnalyzer
+                    {
+                        protected override void Analyze(Span<float> buffer, int channels)
+                        {
+                            // Could accidentally modify the buffer here
+                            // buffer[0] = 0; 
+                        }
+                    }
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.4.0)">
+                    ```csharp
+                    // In your custom analyzer
+                    public class MyAnalyzer : AudioAnalyzer
+                    {
+                        protected override void Analyze(ReadOnlySpan<float> buffer, int channels)
+                        {
+                            // The compiler will now prevent modifications to the buffer.
+                            // buffer[0] = 0; // -> Compile Error!
+                        }
+                    }
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+
+    <Card className="bg-content1 mt-6">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="lucide:book-text" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">3. Structured Logging with `LogEntry`</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            The static `Log.OnLog` event has been updated to provide a structured `LogEntry` object instead of separate `LogLevel` and `string` parameters.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> To provide richer, more extensible logging information. The `LogEntry` struct includes the timestamp and caller information, allowing for more advanced log filtering and formatting.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="Logging Changes" className="mt-4">
+                <Tab key="before" title="Before (v1.3.0)">
+                    ```csharp
+                    Log.OnLog += (level, message) =>
+                    {
+                        Console.WriteLine($"[{level}] {message}");
+                    };
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.4.0)">
+                    ```csharp
+                    Log.OnLog += (entry) =>
+                    {
+                        // Use the structured LogEntry object
+                        Console.WriteLine($"[{entry.Timestamp:HH:mm:ss}] [{entry.Level}] {entry.Caller}: {entry.Message}");
+                    };
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+
+    <Card className="bg-content1 mt-6">
+        <CardHeader>
+            <div className="flex items-center gap-3">
+                <Icon icon="lucide:box" className="text-primary text-2xl flex-shrink-0" />
+                <h3 className="font-semibold text-lg">4. Important: NativeAOT Persistence Changes</h3>
+            </div>
+        </CardHeader>
+        <CardBody>
+            To support NativeAOT compilation, the project persistence system now uses a source-generated JSON context and a type registry. This requires an extra step if your project uses custom `SoundModifier` or `AudioAnalyzer` types.
+
+            <p className="mt-2 text-sm text-foreground-500">
+                <strong>Reason for Change:</strong> Standard reflection-based serialization is not compatible with code trimming or NativeAOT. The new system ensures projects can be saved and loaded reliably in high-performance environments.
+            </p>
+            <Tabs color="primary" variant="bordered" aria-label="NativeAOT Changes" className="mt-4">
+                <Tab key="before" title="Before (v1.3.0)">
+                    ```csharp
+                    // Saving and loading worked via reflection, which is not AOT-friendly.
+                    await CompositionProjectManager.SaveProjectAsync(engine, composition, "project.sfproj");
+
+                    var (loadedComp, _) = await CompositionProjectManager.LoadProjectAsync(engine, format, "project.sfproj");
+                    ```
+                </Tab>
+                <Tab key="after" title="After (v1.4.0)">
+                    ```csharp
+                    // For projects with custom types in NativeAOT, you must register them.
+                    // This is typically done once at application startup.
+                    TypeRegistry.RegisterType<MyCustomModifier>();
+
+                    // Loading/Saving might require providing a custom JSON type resolver
+                    // to include your application's types.
+                    await CompositionProjectManager.SaveProjectAsync(engine, composition, "project.sfproj", customTypeResolver: AppJsonContext.Default);
+
+                    var (loadedComp, _) = await CompositionProjectManager.LoadProjectAsync(engine, format, "project.sfproj", customTypeResolver: AppJsonContext.Default);
+                    
+                    // Note: For projects using only built-in types, no changes are needed.
+                    ```
+                </Tab>
+            </Tabs>
+        </CardBody>
+    </Card>
+</div>
+
+## A Glimpse at New Features
+
+This release introduces a powerful new suite of tools under the `SoundFlow.Security` namespace.
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+    <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+        <CardHeader><div className="flex items-center gap-3"><Icon icon="lucide:lock" className="text-primary text-xl" /> <h4 className="font-semibold">Audio Encryption & Digital Signatures</h4></div></CardHeader>
+        <CardBody className="pt-0">
+            Protect your audio content with AES-256-CTR stream encryption using `AudioEncryptor`. Ensure file integrity and authenticity with ECDSA digital signatures via `FileAuthenticator`, which can be applied to any file, including projects and encrypted audio.
+        </CardBody>
+    </Card>
+    <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+        <CardHeader><div className="flex items-center gap-3"><Icon icon="lucide:fingerprint" className="text-primary text-xl" /> <h4 className="font-semibold">Acoustic Fingerprinting</h4></div></CardHeader>
+        <CardBody className="pt-0">
+            Identify audio content with the new `AudioIdentifier`. It generates robust acoustic fingerprints based on spectral analysis, allowing you to match unknown audio clips against a database of known tracks. An in-memory `IFingerprintStore` is provided.
+        </CardBody>
+    </Card>
+    <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+        <CardHeader><div className="flex items-center gap-3"><Icon icon="lucide:droplets" className="text-primary text-xl" /> <h4 className="font-semibold">Robust Audio Watermarking</h4></div></CardHeader>
+        <CardBody className="pt-0">
+            Embed data directly into your audio. Use `OwnershipWatermarkEmbedModifier` for robust, inaudible watermarks that survive compression, or `IntegrityWatermarkEmbedModifier` for fragile watermarks that detect tampering.
+        </CardBody>
+    </Card>
+    <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+        <CardHeader><div className="flex items-center gap-3"><Icon icon="lucide:file-signature" className="text-primary text-xl" /> <h4 className="font-semibold">Project Integrity and Signing</h4></div></CardHeader>
+        <CardBody className="pt-0">
+            You can now digitally sign your `.sfproj` project files during the save process. Simply provide a `SignatureConfiguration` in `ProjectSaveOptions` to generate a detached `.sig` file, ensuring your project's integrity.
+        </CardBody>
+    </Card>
+</div>
+
+## New Namespaces to Import
+
+As you adopt the new features, you may need to add these `using` directives:
+
+```csharp
+using SoundFlow.Structs; // For Result<T> and IError types
+using SoundFlow.Utils; // For TypeRegistry and LogEntry
+using SoundFlow.Security;
+using SoundFlow.Security.Configuration;
+```
+
+---
+
+These updates continue our commitment to making SoundFlow a robust, secure, and high-performance audio engine. We encourage you to explore the updated documentation for in-depth guides on all the new features. If you encounter any issues during migration, please open an issue on our [GitHub repository](https://github.com/LSXPrime/SoundFlow).

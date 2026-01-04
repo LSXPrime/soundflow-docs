@@ -1,0 +1,322 @@
+---
+id: 22
+title: Encryption & Signatures
+description: Learn how to protect audio confidentiality with AES-256 and ensure authenticity using ECDSA digital signatures.
+navOrder: 22
+category: Security
+---
+
+import { Card, CardBody, Chip, Tabs, Tab } from "@heroui/react";
+import { Icon } from "@iconify/react";
+import { Steps, Step } from '/src/components/Shared/Steps';
+
+# Encryption & Digital Signatures
+
+This guide covers the two most fundamental aspects of audio security: **Confidentiality** (keeping the audio secret) and **Authenticity** (proving who created it and that it hasn't been changed).
+
+SoundFlow simplifies these complex cryptographic operations into a unified API via the `AudioEncryptor` class.
+
+## Core Concepts
+
+Before writing code, it is helpful to understand the standards SoundFlow uses:
+
+*   **Encryption (AES-256-CTR):** We use the Advanced Encryption Standard with a 256-bit key in Counter Mode.
+    *   **Why CTR?** Counter mode turns the block cipher into a stream cipher. This allows us to encrypt audio *sample-by-sample* without needing padding bytes at the end. This is critical for audio engines where file length must match sample count exactly.
+    *   **The Container:** Encrypted files use the `.sfa_enc` format (Secure Audio Container). This container stores the Initialization Vector (IV) and audio format metadata, but *never* the encryption key.
+
+*   **Signatures (ECDSA P-384):** We use Elliptic Curve Digital Signature Algorithm with the NIST P-384 curve.
+    *   **Why P-384?** It offers a security level roughly equivalent to AES-192, providing a very high margin of safety while generating relatively small signatures (approx. 100 bytes).
+    *   **Embedded vs. Detached:** Signatures can be written directly inside the `.sfa_enc` header (Embedded) or saved as a separate `.sig` file (Detached).
+
+## 1. Key Management
+
+Security starts with key management. You need two types of keys:
+1.  **Symmetric Key (32 bytes):** Used for AES encryption. Both the sender (encryptor) and receiver (decryptor) must have this.
+2.  **Asymmetric Key Pair (PEM):** Used for signing. The sender signs with the **Private Key** (kept secret). The receiver verifies with the **Public Key** (distributed freely).
+
+<Card className="bg-danger-50 dark:bg-danger-900/10 border-l-4 border-danger my-4">
+    <CardBody>
+        <div className="flex items-start gap-3">
+            <Icon icon="lucide:alert-octagon" className="text-danger text-2xl flex-shrink-0 mt-1" />
+            <div>
+                <h4 className="font-bold text-danger">Security Warning</h4>
+                <p className="text-sm">
+                    <strong>NEVER</strong> hardcode your Private Key or Encryption Key directly into your source code if you plan to release the app publicly. Use a Key Management Service (KMS), environment variables, or secure obfuscation techniques.
+                </p>
+            </div>
+        </div>
+    </CardBody>
+</Card>
+
+### Generating Keys
+
+Use the helper utilities to generate secure random keys.
+
+```csharp
+using SoundFlow.Security.Utils;
+using SoundFlow.Security.Configuration;
+using System.Security.Cryptography;
+
+// 1. Generate a 32-byte AES Key for Encryption
+byte[] aesKey = new byte[32];
+using (var rng = RandomNumberGenerator.Create())
+{
+    rng.GetBytes(aesKey);
+}
+// Save 'aesKey' securely...
+
+// 2. Generate an ECDSA Key Pair for Signing
+SignatureConfiguration sigConfig = SignatureKeyGenerator.Generate();
+
+// Save the Private Key securely (Server-side / Producer-side only)
+string privateKeyPem = sigConfig.PrivateKeyPem;
+File.WriteAllText("private.pem", privateKeyPem);
+
+// Distribute the Public Key with your app (Client-side / Consumer-side)
+string publicKeyPem = sigConfig.PublicKeyPem;
+File.WriteAllText("public.pem", publicKeyPem);
+```
+
+## 2. Encrypting Audio (Producer Side)
+
+Use `AudioEncryptor.EncryptAsync` to secure your assets. You can process raw files, streams, or any `ISoundDataProvider`.
+
+<Tabs aria-label="Encryption Scenarios" color="primary" variant="underlined">
+    <Tab key="basic" title="Basic Encryption">
+        This scenario protects the content but does not sign it. The file cannot be played without the key, but the engine won't verify if the file was modified.
+
+        ```csharp
+        using SoundFlow.Providers;
+        using SoundFlow.Security;
+        using SoundFlow.Security.Configuration;
+        using System.Security.Cryptography;
+
+        // 1. Prepare Configuration
+        // IV (Nonce) should be unique per file. 16 bytes recommended.
+        byte[] iv = new byte[16]; 
+        RandomNumberGenerator.Fill(iv);
+
+        var encryptConfig = new EncryptionConfiguration 
+        { 
+            Key = myAesKey, // The 32-byte key from step 1
+            Iv = iv 
+        };
+
+        // 2. Load Source Audio
+        using var engine = new MiniAudioEngine();
+        using var sourceProvider = new AssetDataProvider(engine, "original_music.wav");
+
+        // 3. Encrypt to File
+        // The IV is automatically written to the file header.
+        await AudioEncryptor.EncryptAsync(
+            source: sourceProvider,
+            destinationPath: "music.sfa",
+            config: encryptConfig
+        );
+        ```
+    </Tab>
+    <Tab key="signed" title="Authenticated Encryption (Signing)">
+        This scenario protects the content AND guarantees authenticity. You can choose to embed the signature or keep it separate.
+
+        ```csharp
+        using SoundFlow.Providers;
+        using SoundFlow.Security;
+        using SoundFlow.Security.Configuration;
+
+        // ... setup engine and sourceProvider ...
+
+        // 1. Setup Signing Config (Requires Private Key)
+        var sigConfig = new SignatureConfiguration 
+        {
+            PrivateKeyPem = File.ReadAllText("private.pem")
+        };
+
+        // Option A: Embedded Signature (Single File)
+        // The signature is hidden inside the .sfa header. 
+        // Best for neat file management.
+        await AudioEncryptor.EncryptAsync(
+            sourceProvider, 
+            "music_signed.sfa", 
+            encryptConfig, 
+            sigConfig, 
+            embedSignature: true // <--- ENABLE EMBEDDING
+        );
+
+        // Option B: Detached Signature (Two Files)
+        // Creates "music.sfa_enc" and "music.sfa_enc.sig".
+        // Best if you want to sign existing files without modifying them.
+        await AudioEncryptor.EncryptAsync(
+            sourceProvider, 
+            "music_detached.sfa", 
+            encryptConfig, 
+            sigConfig, 
+            embedSignature: false // <--- DISABLE EMBEDDING
+        );
+        ```
+    </Tab>
+</Tabs>
+
+## 3. Decrypting Audio (Consumer Side)
+
+On the playback side, you use `AudioEncryptor` to get a playable `ISoundDataProvider`. 
+
+<Tabs aria-label="Decryption Scenarios" color="primary" variant="underlined">
+    <Tab key="decrypt" title="Simple Decryption">
+        Use this if you only care about playing the audio and trust the file source implicitly (e.g., local internal files).
+
+        ```csharp
+        using SoundFlow.Security;
+        using SoundFlow.Components; // For SoundPlayer
+
+        // 1. Decrypt the file
+        // This returns a Result<ISoundDataProvider>
+        var result = AudioEncryptor.Decrypt("music.sfa", myAesKey);
+
+        if (result.IsSuccess)
+        {
+            // The provider streams and decrypts on-the-fly. 
+            // It does NOT load the whole file into RAM.
+            using ISoundDataProvider secureProvider = result.Value;
+
+            // 2. Play it like any other audio
+            var player = new SoundPlayer(engine, format, secureProvider);
+            device.MasterMixer.AddComponent(player);
+            player.Play();
+        }
+        else
+        {
+            // Handle error (e.g., wrong key, corrupt file)
+            Console.WriteLine($"Decryption failed: {result.Error.Message}");
+        }
+        ```
+    </Tab>
+    <Tab key="verify" title="Verify & Decrypt">
+        Use this for **Zero Trust** environments (e.g., DLC downloaded from the web). It cryptographically verifies the file matches the signature before allowing playback.
+
+        ```csharp
+        using SoundFlow.Security;
+        using SoundFlow.Security.Configuration;
+
+        // 1. Setup Verification Config (Requires Public Key Only)
+        // Safe to distribute this key with your game/app.
+        var verifyConfig = new SignatureConfiguration 
+        {
+            PublicKeyPem = File.ReadAllText("public.pem")
+        };
+
+        // 2. Verify and Decrypt
+        // This method automatically detects if the signature is embedded.
+        // If detached, pass the signature string as the 4th argument.
+        var result = await AudioEncryptor.VerifyAndDecryptAsync(
+            sourceFilePath: "music_signed.sfa", 
+            key: myAesKey, 
+            signingConfig: verifyConfig
+        );
+
+        if (result.IsSuccess)
+        {
+            Console.WriteLine("Signature Verified! File is authentic.");
+            using ISoundDataProvider secureProvider = result.Value;
+            
+            // Play audio...
+        }
+        else
+        {
+            // This captures tampering attempts, corruption, or fake files.
+            Console.WriteLine($"Security Alert: {result.Error.Message}");
+        }
+        ```
+    </Tab>
+</Tabs>
+
+## Detailed Workflow Example
+
+Here is a complete end-to-end example demonstrating the "Secure Distribution" lifecycle: generating keys, creating a secure package with an embedded signature, and then verifying/playing it.
+
+<Steps>
+    <Step title="Producer: Secure the Asset" icon="lucide:package-check">
+        This code runs on your build server or content creation tool.
+
+        ```csharp
+        // Setup Keys
+        byte[] aesKey = GetSecretBuildServerKey(); 
+        string privateKey = File.ReadAllText("producer_private.pem");
+        
+        var encryptConfig = new EncryptionConfiguration 
+        { 
+            Key = aesKey, 
+            Iv = new byte[16] // In production, generate random IV per file!
+        };
+        
+        var signConfig = new SignatureConfiguration { PrivateKeyPem = privateKey };
+
+        using var engine = new MiniAudioEngine();
+        using var original = new AssetDataProvider(engine, "Assets/HeroTheme.wav");
+
+        Console.WriteLine("Encrypting and Signing HeroTheme...");
+        
+        // This creates 'HeroTheme.sfa' with the signature inside.
+        await AudioEncryptor.EncryptAsync(
+            original, 
+            "Dist/HeroTheme.sfa", 
+            encryptConfig, 
+            signConfig, 
+            embedSignature: true
+        );
+        ```
+    </Step>
+    <Step title="Consumer: Load the Asset" icon="lucide:play-circle">
+        This code runs inside your game or application on the user's machine.
+
+        ```csharp
+        // Setup Keys
+        byte[] aesKey = GetObfuscatedGameKey(); 
+        // Note: Only Public Key is needed here!
+        string publicKey = Resources.Load("game_public.pem"); 
+
+        var verifyConfig = new SignatureConfiguration { PublicKeyPem = publicKey };
+
+        Console.WriteLine("Loading secure asset...");
+
+        var loadResult = await AudioEncryptor.VerifyAndDecryptAsync(
+            "Dist/HeroTheme.sfa",
+            aesKey,
+            verifyConfig
+        );
+
+        if (loadResult.IsFailure)
+        {
+            // Handle tampering (modders, malware, download corruption)
+            Log.Critical($"Security Breach: {loadResult.Error.Message}");
+            ShowErrorDialog("Game data is corrupt or has been tampered with.");
+            return;
+        }
+
+        // If success, we have a clean stream ready to play
+        using var secureVoice = loadResult.Value;
+        var player = new SoundPlayer(engine, format, secureVoice);
+        
+        device.MasterMixer.AddComponent(player);
+        player.Play();
+        ```
+    </Step>
+</Steps>
+
+## Understanding Errors
+
+The `Result` object returned by `VerifyAndDecryptAsync` provides detailed error information to help you diagnose security failures.
+
+| Error Type | Meaning | Likely Cause |
+| :--- | :--- | :--- |
+| `HeaderNotFoundError` | Not a valid container | The file is a standard WAV/MP3, not an `.sfa` file. |
+| `ValidationError` | **Signature Mismatch** | The file content has been altered after signing, or the wrong Public Key was used. **Treat this as a security breach.** |
+| `CryptographicException` | Decryption Failed | The AES key is incorrect. The file will fail to decode or play as static noise. |
+| `IoError` | File Access | File missing, locked, or permissions denied. |
+
+```csharp
+if (result.Error is ValidationError valErr)
+{
+    // Specific handling for signature failures
+    YourTelemetryService.ReportSecurityIncident("SignatureMismatch", filePath);
+}
+```

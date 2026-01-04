@@ -1,0 +1,185 @@
+﻿---
+id: 15
+title: The Instrument Model
+description: An in-depth look at the data model that defines a synthesizer sound, including Instrument Banks, Voice Mappings, and Voice Definitions.
+navOrder: 15
+category: Synthesis
+---
+
+# The Instrument Model
+
+The SoundFlow synthesizer's power and flexibility come from its hierarchical data model for defining sounds.
+This model allows for everything from simple single-oscillator patches to complex, multi-layered, velocity-switched sampled instruments with unison stacking ("Supersaw").
+Understanding this hierarchy is key to creating your own sounds or using pre-existing sound libraries like SoundFonts.
+
+## The Hierarchy of Sound
+
+A sound is defined by a chain of objects, each responsible for a different level of abstraction. The relationship can be visualized as follows:
+
+```
+Synthesizer
+└── IInstrumentBank (A collection of instruments)
+└── Instrument (A single patch, e.g., "Grand Piano")
+└── VoiceMapping (A rule, e.g., "Play this sound for soft notes on the lower keys")
+└── VoiceDefinition (The recipe for that sound, e.g., "Use a sine wave with 7 voices and 20% detune")
+└── IVoice (The active sound instance playing a single note)
+```
+
+Let's break down each component in detail.
+
+### 1. `IInstrumentBank` (The Library)
+
+The `IInstrumentBank` is an interface representing a collection of instruments. The `Synthesizer` uses an implementation of this interface to find which sound to play when it receives a MIDI Program Change message.
+
+*   **Core Method:** `Instrument GetInstrument(int bank, int program)`
+This method is the heart of the interface. The synthesizer calls it with the current MIDI bank and program number, and the bank is expected to return the corresponding `Instrument` object.
+
+*   **Implementations:** SoundFlow provides several implementations:
+*   **`BasicInstrumentBank`:** A simple, hardcoded bank with a few basic synth sounds. Perfect for getting started and for testing.
+*   **`SoundFontBank`:** A powerful implementation that loads a standard `.sf2` SoundFont file, parsing all of its presets into playable `Instrument`s.
+*   **`MultiInstrumentBank`:** A container that holds a prioritized list of other banks, allowing you to layer them.
+
+### 2. `Instrument` (The Patch)
+
+An `Instrument` represents a single, complete sound or preset, such as "Acoustic Grand Piano," "Synth Bass," or "Drum Kit." It doesn't define the sound itself but holds a list of `VoiceMapping` rules that determine *how* the sound is constructed in response to different performance inputs.
+
+*   **Key Property:** A list of `VoiceMapping` objects.
+*   **Fallback Definition:** Each instrument also has a fallback `VoiceDefinition` that is used if an incoming note doesn't match any of its specific mapping rules.
+*   **`IsFallback` Property:** A boolean that indicates if this instrument is just a placeholder. When searching through banks, the synthesizer will keep looking if it only finds fallback instruments.
+
+### 3. `VoiceMapping` (The Rule)
+
+A `VoiceMapping` is the core of a multi-sampled or layered instrument. It's a rule that says, "If a MIDI note falls within this key range and this velocity range, then use this specific `VoiceDefinition`."
+
+This allows for creating expressive instruments:
+*   **Velocity Layers:** Different samples or synth settings for soft, medium, and hard key presses.
+*   **Key Splits:** Different sounds across the keyboard (e.g., a bass sound on the left hand and a piano on the right).
+
+**Key Properties:**
+*   `Definition`: The `VoiceDefinition` to trigger if this mapping's conditions are met.
+*   `MinKey` / `MaxKey`: The MIDI note number range (inclusive, 0-127).
+*   `MinVelocity` / `MaxVelocity`: The velocity range (inclusive, 0-127).
+
+When a `NoteOn` event occurs, the `Instrument` iterates through its list of `VoiceMapping`s and uses the first one whose `IsMatch(noteNumber, velocity)` method returns `true`.
+
+### 4. `VoiceDefinition` (The Recipe)
+
+The `VoiceDefinition` is the "recipe" for a sound. It contains all the parameters needed to construct a single, playable `IVoice`. This is where the actual sound design happens.
+
+**Core Parameters (in constructor):**
+*   `Format`: The `AudioFormat` of the engine.
+*   `OscillatorType`: The waveform for the oscillator(s) (e.g., `Sine`, `Sawtooth`).
+*   `AttackTime`, `DecayTime`, `SustainLevel`, `ReleaseTime`: The parameters for the ADSR amplitude envelope.
+*   `UseFilter`: A boolean indicating whether a low-pass filter (with its own envelope) should be applied.
+*   `Sample`: An optional `SampleData` object. If this is provided, the voice will be a sample player instead of an oscillator-based synth.
+
+#### Unison and Detune (Creating "Thick" Sounds)
+
+The `VoiceDefinition` supports unison stacking, allowing a single note to trigger multiple oscillators simultaneously. This is critical for creating rich, wide synthesizer sounds like the classic "Supersaw" lead or lush pads.
+
+*   **`Unison` (int):** The number of oscillators to stack per note. A value of `1` is a standard mono voice. A value of `7` creates 7 distinct oscillators for each key press.
+*   **`Detune` (float):** The spread of frequencies for the unison voices.
+*   A value of `0` means all voices play the exact same pitch (causing phasing).
+*   A value of `0.01` represents a 1% frequency deviation for the outermost voices, creating a thick, chorused effect.
+
+**Internal Behavior:**
+When a `Voice` is created with `Unison > 1`, SoundFlow automatically:
+1.  Instantiates multiple `UnisonLayer` objects.
+2.  Spreads the pitch of each layer symmetrically around the center frequency based on the `Detune` amount.
+3.  Spreads the **pan** of each layer across the stereo field (e.g., voice 1 hard left, voice 7 hard right, voice 4 center) to create a wide stereo image.
+4.  Normalizes the gain to prevent clipping (so 7 voices aren't 7x louder than 1).
+
+**Example: Creating a "Supersaw" Recipe**
+```csharp
+var superSawDef = new VoiceDefinition(
+    format: myAudioFormat,
+    oscType: Oscillator.WaveformType.Sawtooth,
+    unison: 7,        // Stack 7 sawtooth waves
+    detune: 0.015f,   // 1.5% detune spread for a thick sound
+    attack: 0.01f,    // Fast attack
+    decay: 0.5f,
+    sustain: 1.0f,    // Full sustain
+    release: 0.5f
+);
+```
+
+**Core Method:** `IVoice CreateVoice(VoiceContext context)`
+This factory method is called by the synthesizer to create a new, active `IVoice` instance based on the recipe's parameters and the specific context of the incoming note (frequency, velocity, etc.).
+
+### 5. `IVoice` (The Active Sound)
+
+An `IVoice` is the final, active object that actually generates audio samples.
+*   It is created by a `VoiceDefinition` when a `NoteOn` message is processed.
+*   It has a lifecycle: it's created, it renders audio for the duration of the note, it enters a release phase on `NoteOff`, and it signals it's finished (`IsFinished`) once its envelope has faded to silence.
+*   The `Synthesizer` manages a pool of active voices, adding new ones on `NoteOn` and removing them once they are finished.
+
+## Putting It Together: A Manual Instrument Example
+
+This conceptual example demonstrates how you would manually construct an instrument with two velocity layers.
+
+```csharp
+using SoundFlow.Components;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis.Instruments;
+using System.Collections.Generic;
+
+// Assume 'format' is a valid AudioFormat instance (e.g., AudioFormat.DvdHq)
+
+// Define the Voice "Recipes"
+
+// A soft, gentle sine wave for low velocities
+var softVoiceDef = new VoiceDefinition(
+    format,
+    oscType: Oscillator.WaveformType.Sine,
+    unison: 1,
+    detune: 0,
+    attack: 0.05f,
+    decay: 0.8f,
+    sustain: 0.1f,
+    release: 0.5f
+);
+
+// A brighter, thick "Supersaw" for high velocities
+var hardVoiceDef = new VoiceDefinition(
+    format,
+    oscType: Oscillator.WaveformType.Sawtooth,
+    unison: 5,        // 5 stacked oscillators
+    detune: 0.008f,   // Mild detune
+    attack: 0.01f,
+    decay: 0.5f,
+    sustain: 0.6f,
+    release: 0.3f
+);
+
+// A fallback definition in case no mapping matches (though our mappings cover all cases)
+var fallbackDef = new VoiceDefinition(format, Oscillator.WaveformType.Triangle, 1, 0, 0.1f, 0.1f, 1.0f, 0.1f);
+
+// Create the Mapping Rules
+
+// Rule 1: For velocities 1-64, use the soft definition
+var softMapping = new VoiceMapping(softVoiceDef)
+{
+    MinVelocity = 1,
+    MaxVelocity = 64
+    // MinKey and MaxKey default to 0-127, covering the whole keyboard
+};
+
+// Rule 2: For velocities 65-127, use the hard definition
+var hardMapping = new VoiceMapping(hardVoiceDef)
+{
+    MinVelocity = 65,
+    MaxVelocity = 127
+};
+
+// Assemble the Instrument
+
+var velocityPiano = new Instrument(
+    mappings: new List<VoiceMapping> { softMapping, hardMapping },
+    fallbackDefinition: fallbackDef
+);
+
+// Now, 'velocityPiano' can be added to an IInstrumentBank and used by a Synthesizer.
+// When the synthesizer calls instrument.GetVoiceDefinition(note, velocity), it will get:
+// - softVoiceDef for a note with velocity 50.
+// - hardVoiceDef for a note with velocity 110.
+```

@@ -106,7 +106,7 @@ const HierarchicalSidebar: React.FC<HierarchicalSidebarProps> = ({ isOpen, onClo
 
             <aside
                 className={`
-                    flex-shrink-0 overflow-y-auto z-50
+                    flex-shrink-0 z-50 relative
                     transition-all duration-300 ease-in-out
                     
                     // Base styles for mobile and default desktop
@@ -129,9 +129,9 @@ const HierarchicalSidebar: React.FC<HierarchicalSidebarProps> = ({ isOpen, onClo
                     variant="light"
                     onPress={() => setIsMinimized(!isMinimized)}
                     className={`
-                        hidden lg:flex absolute top-1/2  ${isMinimized ? 'right-10' : 'right-0.5'} z-20
+                        hidden lg:flex absolute top-1/2 right-0 z-50
                         items-center justify-center
-                        w-10 h-10 rounded-full shadow-xl
+                        w-8 h-8 rounded-full shadow-xl
                         bg-content1 hover:bg-content2
                         border-2 border-divider
                         transform -translate-y-1/2 translate-x-1/2
@@ -139,14 +139,16 @@ const HierarchicalSidebar: React.FC<HierarchicalSidebarProps> = ({ isOpen, onClo
                     aria-label={isMinimized ? "Expand sidebar" : "Minimize sidebar"}
                 >
                     <Icon
-                        icon={isMinimized ? "heroicons:chevron-double-right-20-solid" : "heroicons:chevron-double-left-20-solid"}
-                        className="w-6 h-6 text-default-600"
-                        fontSize={20}
+                        icon={isMinimized ? "heroicons:chevron-right-20-solid" : "heroicons:chevron-left-20-solid"}
+                        className="w-5 h-5 text-default-600"
                     />
                 </Button>
 
-                {/* Sidebar Content */}
-                <div className={`p-6 h-full transition-opacity duration-300 ${isMinimized ? 'lg:opacity-0 lg:pointer-events-none' : 'opacity-100'}`}>
+                {/* Content Container */}
+                <div className={`
+                    h-full overflow-y-auto p-6 transition-opacity duration-300 
+                    ${isMinimized ? 'lg:opacity-0 lg:pointer-events-none' : 'opacity-100'}
+                `}>
                     <div className="flex items-center justify-between mb-8">
                         {/* Title Section */}
                         <Link to={`/docs/${version}`} className="flex items-center gap-2">

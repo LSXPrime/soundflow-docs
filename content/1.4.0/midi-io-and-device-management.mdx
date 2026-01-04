@@ -1,0 +1,259 @@
+﻿---
+id: 13.1
+title: MIDI I/O & Device Management
+description: A foundational guide to discovering, initializing, and interacting with physical MIDI devices for basic input and output operations.
+navOrder: 13.1
+category: MIDI
+---
+
+
+# MIDI I/O & Device Management
+
+This guide provides a foundational walkthrough of how to enable and manage MIDI devices in SoundFlow. You will learn how to discover connected MIDI hardware, initialize devices for input and output, and handle basic MIDI messages.
+
+## 1. Introduction to MIDI in SoundFlow
+
+SoundFlow's MIDI capabilities are designed to be extensible through a **pluggable backend system**. The core library provides the abstractions, but the actual communication with the operating system's MIDI APIs is handled by a separate backend implementation.
+
+*   **`IMidiBackend` Interface:** This is the contract that all MIDI backends must implement. It defines the core responsibilities for device enumeration and creation.
+*   **`SoundFlow.Midi.PortMidi`:** This is the official, cross-platform backend implementation provided by SoundFlow. It wraps the widely-used PortMidi library, ensuring compatibility across Windows, macOS, and Linux.
+
+## 2. Enabling MIDI Functionality
+
+Before you can perform any MIDI operations, you must enable a MIDI backend.
+
+### Step 1: Install the Backend Package
+
+First, add the `SoundFlow.Midi.PortMidi` NuGet package to your project.
+
+```bash
+# Using .NET CLI
+dotnet add package SoundFlow.Midi.PortMidi
+
+# Using Package Manager Console
+Install-Package SoundFlow.Midi.PortMidi
+```
+
+### Step 2: Enable the Backend in Code
+
+In your application's startup code, after creating your `AudioEngine` instance, you must call the `UsePortMidi()` extension method. This method creates an instance of the `PortMidiBackend`, registers it with the engine, and initializes it. This call is mandatory and should only be done once.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.PortMidi; // Import the extension method
+
+// 1. Initialize the audio engine.
+using var engine = new MiniAudioEngine();
+
+// 2. Enable the PortMidi backend.
+// This activates all MIDI functionality in the engine.
+engine.UsePortMidi();
+
+Console.WriteLine("MIDI backend enabled.");
+```
+
+### Step 3: Update Device Lists
+
+After enabling the backend, you must explicitly ask the engine to enumerate the available MIDI devices. This is done by calling `engine.UpdateMidiDevicesInfo()`. This method populates the `MidiInputDevices` and `MidiOutputDevices` properties on your engine instance.
+
+```csharp
+// After enabling the backend:
+engine.UpdateMidiDevicesInfo();
+```
+
+## 3. Listing and Identifying Devices
+
+Once the device lists have been updated, you can iterate through them to find the hardware you want to use. Each device is represented by a `MidiDeviceInfo` struct, which contains its `Name` and a backend-specific `Id`.
+
+### Complete Example: Listing All MIDI Devices
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.PortMidi;
+
+public static class Program
+{
+    public static void Main()
+    {
+        using var engine = new MiniAudioEngine();
+        engine.UsePortMidi();
+
+        Console.WriteLine("Enumerating MIDI devices...");
+        engine.UpdateMidiDevicesInfo();
+
+        Console.WriteLine("\n--- MIDI Input Devices ---");
+        if (engine.MidiInputDevices.Length != 0)
+        {
+            foreach (var device in engine.MidiInputDevices)
+            {
+                Console.WriteLine($"ID: {device.Id}, Name: {device.Name}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("No MIDI input devices found.");
+        }
+
+        Console.WriteLine("\n--- MIDI Output Devices ---");
+        if (engine.MidiOutputDevices.Length != 0)
+        {
+            foreach (var device in engine.MidiOutputDevices)
+            {
+                Console.WriteLine($"ID: {device.Id}, Name: {device.Name}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("No MIDI output devices found.");
+        }
+    }
+}
+```
+
+## 4. The `MidiManager` and Managed Device Nodes
+
+You do not create `MidiInputDevice` or `MidiOutputDevice` instances directly using a `new` keyword. Instead, the `MidiManager` (accessed via `engine.MidiManager`) acts as a factory and lifecycle manager. It ensures that only one instance of a physical device is active at a time and provides a stable "node" for routing purposes.
+
+*   **`GetOrCreateInputNode(MidiDeviceInfo)`:** This `MidiManager` method takes a `MidiDeviceInfo` struct and returns a `MidiInputNode`. The node contains the live, initialized `MidiInputDevice` instance. Calling this method multiple times for the same device will return the same node instance, preventing resource conflicts.
+*   **`GetOrCreateOutputNode(MidiDeviceInfo)`:** This method works similarly for output devices, returning a `MidiOutputNode` that contains an active `MidiOutputDevice`.
+
+## 5. Practical Examples of Basic I/O
+
+The following examples demonstrate the complete workflow for basic MIDI input and output operations.
+
+### Example 1: Receiving MIDI Messages
+
+This example shows how to listen for incoming MIDI messages from a specific input device and print their contents to the console.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Midi.Structs;
+
+public static class Program
+{
+    public static void Main()
+    {
+        using var engine = new MiniAudioEngine();
+        engine.UsePortMidi();
+        engine.UpdateMidiDevicesInfo();
+
+        var inputDeviceInfo = engine.MidiInputDevices.FirstOrDefault();
+        if (inputDeviceInfo.Name == null)
+        {
+            Console.WriteLine("No MIDI input device found. Exiting.");
+            return;
+        }
+
+        Console.WriteLine($"Found input device: '{inputDeviceInfo.Name}'. Attempting to listen...");
+
+        try
+        {
+            // 1. Get the managed node for the device from the MidiManager.
+            // This initializes the physical device if it's the first time it's being accessed.
+            var inputNode = engine.MidiManager.GetOrCreateInputNode(inputDeviceInfo);
+
+            // 2. Subscribe to the node's output event to receive channel messages.
+            inputNode.OnMessageOutput += OnMidiMessageReceived;
+
+            Console.WriteLine("Successfully listening for MIDI messages. Play some notes on your device.");
+            Console.WriteLine("Press any key to exit.");
+            Console.ReadKey();
+
+            // 3. Unsubscribe when done to be a good citizen.
+            inputNode.OnMessageOutput -= OnMidiMessageReceived;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Event handler for incoming MIDI messages.
+    /// </summary>
+    private static void OnMidiMessageReceived(MidiMessage message)
+    {
+        // The MidiMessage struct provides convenient properties to interpret the data.
+        Console.WriteLine(
+            $"[Received] Command: {message.Command}, " +
+            $"Channel: {message.Channel}, " +
+            $"Note/CC: {message.Data1}, " +
+            $"Value: {message.Data2}, " +
+            $"Timestamp: {message.Timestamp}"
+        );
+    }
+}
+```
+
+### Example 2: Sending MIDI Messages
+
+This example shows how to send MIDI messages to a specific output device.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Midi.Structs;
+
+public static class Program
+{
+    public static void Main()
+    {
+        using var engine = new MiniAudioEngine();
+        engine.UsePortMidi();
+        engine.UpdateMidiDevicesInfo();
+
+        var outputDeviceInfo = engine.MidiOutputDevices.FirstOrDefault();
+        if (outputDeviceInfo.Name == null)
+        {
+            Console.WriteLine("No MIDI output device found. Exiting.");
+            return;
+        }
+
+        Console.WriteLine($"Found output device: '{outputDeviceInfo.Name}'. Attempting to send a note...");
+
+        try
+        {
+            // 1. Get the managed node for the output device.
+            var outputNode = engine.MidiManager.GetOrCreateOutputNode(outputDeviceInfo);
+
+            // 2. Create MIDI messages to send.
+            // Status 0x90 = Note On on Channel 1.
+            var noteOnMessage = new MidiMessage(0x90, 60, 100); // Note 60 (Middle C), Velocity 100
+
+            // Status 0x80 = Note Off on Channel 1.
+            var noteOffMessage = new MidiMessage(0x80, 60, 0);  // Note 60 (Middle C), Velocity 0
+
+            // 3. Send the Note On message.
+            var result = outputNode.ProcessMessage(noteOnMessage);
+            if(result.IsSuccess)
+            {
+                Console.WriteLine("Sent Note On for Middle C.");
+            }
+            else
+            {
+                Console.WriteLine($"Failed to send Note On: {result.Error?.Message}");
+                return;
+            }
+
+            // 4. Wait for one second.
+            Thread.Sleep(1000);
+
+            // 5. Send the Note Off message.
+            result = outputNode.ProcessMessage(noteOffMessage);
+            if(result.IsSuccess)
+            {
+                Console.WriteLine("Sent Note Off for Middle C.");
+            }
+            else
+            {
+                 Console.WriteLine($"Failed to send Note Off: {result.Error?.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred: {ex.Message}");
+        }
+    }
+}
+```

@@ -1,0 +1,340 @@
+﻿---
+id: 11
+title: WebRTC Audio Processing Module (APM) Extension
+description: Integrate advanced voice processing capabilities like Echo Cancellation, Noise Suppression, and Automatic Gain Control into SoundFlow using the WebRTC APM Extension.
+navOrder: 11
+category: Extensions
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs} from "@heroui/react";
+import { Steps, Step } from '/src/components/Shared/Steps';
+
+# WebRTC Audio Processing Module (APM) Extension for SoundFlow
+
+The `SoundFlow.Extensions.WebRtc.Apm` package integrates a native library based on the high-quality WebRTC Audio Processing Module (APM) into the SoundFlow audio engine. This extension provides advanced voice processing features essential for real-time communication and audio enhancement.
+
+## Features
+
+The WebRTC APM extension offers several key audio processing features:
+
+*   **Acoustic Echo Cancellation (AEC):** Reduces or eliminates echoes that occur when audio played through speakers is picked up by the microphone.
+*   **Noise Suppression (NS):** Attenuates steady-state background noise (e.g., fans, hums) to improve speech clarity. Multiple suppression levels are available.
+*   **Automatic Gain Control (AGC):** Dynamically adjusts the microphone input volume to maintain a consistent audio level, preventing clipping or overly quiet audio. Supports different modes and target levels.
+*   **High Pass Filter (HPF):** Removes low-frequency components (typically below 80Hz) to reduce rumble and DC offset.
+*   **Pre-Amplifier:** Applies a configurable fixed gain to the audio signal before other APM processing steps.
+*   **Multi-channel Processing Configuration:** Allows specifying how multi-channel audio is handled and downmixed.
+
+These features can be configured and applied primarily through the `WebRtcApmModifier` for real-time processing within the SoundFlow audio graph, or using the `NoiseSuppressor` component for offline batch processing.
+
+**Important Note on Sample Rates:** The WebRTC APM native library primarily supports specific sample rates: **8000 Hz, 16000 Hz, 32000 Hz, and 48000 Hz**. Ensure your SoundFlow `AudioEngine` is initialized with one of these sample rates when using this extension for optimal performance and compatibility.
+
+## Installation
+
+To use this extension, you need to have the core `SoundFlow` library installed. Then, add the `SoundFlow.Extensions.WebRtc.Apm` package to your project:
+
+<Tabs color="primary" variant="bordered" aria-label="Installation options">
+    <Tab
+        key="nuget"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:nuget' />
+                <span>NuGet Package Manager</span>
+            </div>
+        }
+    >
+        ```bash
+        Install-Package SoundFlow.Extensions.WebRtc.Apm
+        ```
+    </Tab>
+    <Tab
+        key="cli"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:dotnet' />
+                <span>.NET CLI</span>
+            </div>
+        }
+    >
+        ```bash
+        dotnet add package SoundFlow.Extensions.WebRtc.Apm
+        ```
+    </Tab>
+</Tabs>
+
+This package includes the necessary C# wrapper and the native WebRTC APM binaries for supported platforms.
+
+## Usage
+
+### Real-time Processing with `WebRtcApmModifier`
+
+The `WebRtcApmModifier` is a `SoundModifier` that can be added to any `SoundComponent` to process its audio output in real-time. This is ideal for applications like voice chat, live audio input processing, or any scenario requiring real-time audio enhancement. The following steps demonstrate a typical full-duplex setup for echo cancellation.
+
+<Steps layout='vertical'>
+    <Step title="Initialize AudioEngine & Devices" description="Create the engine and a full-duplex device" icon='ph:engine-bold'>
+        ### 1. Initialize SoundFlow `AudioEngine` and Devices
+        First, create an instance of the `AudioEngine`. Then, define an `AudioFormat` compatible with WebRTC (e.g., 48kHz mono). Finally, initialize a `FullDuplexDevice`, which manages both a capture (microphone) and a playback (speaker) device, making it perfect for AEC scenarios.
+
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Abstracts.Devices;
+        using SoundFlow.Backends.MiniAudio;
+        using SoundFlow.Enums;
+        using SoundFlow.Structs;
+
+        // Initialize the audio engine
+        var audioEngine = new MiniAudioEngine();
+
+        // Define a WebRTC APM compatible audio format
+        var audioFormat = new AudioFormat
+        {
+            SampleRate = 48000,
+            Channels = 1, // Mono for typical voice processing
+            Format = SampleFormat.F32
+        };
+
+        // Initialize a full-duplex device using the system's default microphone and speakers
+        var fullDuplexDevice = audioEngine.InitializeFullDuplexDevice(
+            playbackDeviceInfo: audioEngine.PlaybackDevices.FirstOrDefault(d => d.IsDefault),
+            captureDeviceInfo: audioEngine.CaptureDevices.FirstOrDefault(d => d.IsDefault),
+            format: audioFormat
+        );
+
+        // Start the devices so they are ready for processing
+        fullDuplexDevice.Start();
+        ```
+    </Step>
+    <Step title="Create SoundComponent for Mic" description="Set up a data provider and player for the mic" icon='ph:microphone-bold'>
+        ### 2. Set Up the Microphone Input Component
+        Create a `MicrophoneDataProvider` to receive live audio from the capture device, and a `SoundPlayer` to process this data through the SoundFlow graph. This `SoundPlayer` will act as our microphone source component.
+
+        ```csharp
+        using SoundFlow.Components;
+        using SoundFlow.Providers;
+
+        // Create a data provider that reads from our duplex device
+        var microphoneDataProvider = new MicrophoneDataProvider(fullDuplexDevice);
+
+        // Create a sound player to process the live mic data
+        // We will add the APM modifier to this player
+        var micAudioComponent = new SoundPlayer(audioEngine, audioFormat, microphoneDataProvider);
+        ```
+    </Step>
+    <Step title="Configure APM Modifier" description="Instantiate and set up the modifier" icon='material-symbols:settings-outline'>
+        ### 3. Instantiate and Configure `WebRtcApmModifier`
+        The modifier's constructor allows setting initial states for all features. You can also adjust them dynamically via its public properties.
+
+        ```csharp
+        using SoundFlow.Extensions.WebRtc.Apm;
+        using SoundFlow.Extensions.WebRtc.Apm.Modifiers;
+
+        var apmModifier = new WebRtcApmModifier(
+            // Echo Cancellation (AEC) settings
+            aecEnabled: true,
+            aecMobileMode: false, // Desktop mode is generally more robust
+            aecLatencyMs: 40,     // Estimated system latency for AEC (tune this)
+
+            // Noise Suppression (NS) settings
+            nsEnabled: true,
+            nsLevel: NoiseSuppressionLevel.High,
+
+            // Automatic Gain Control (AGC) - Version 1 (legacy)
+            agc1Enabled: true,
+            agcMode: GainControlMode.AdaptiveDigital,
+            agcTargetLevel: -3,   // Target level in dBFS (0 is max, typical is -3 to -18)
+            agcCompressionGain: 9, // Only for FixedDigital mode
+            agcLimiter: true,
+
+            // Automatic Gain Control (AGC) - Version 2 (newer, often preferred)
+            agc2Enabled: false, // Set to true to use AGC2, potentially disable AGC1
+
+            // High Pass Filter (HPF)
+            hpfEnabled: true,
+
+            // Pre-Amplifier
+            preAmpEnabled: false,
+            preAmpGain: 1.0f,
+
+            // Pipeline settings for multi-channel audio (if numChannels > 1)
+            useMultichannelCapture: false, // Process capture (mic) as mono/stereo as configured by AudioEngine
+            useMultichannelRender: false,  // Process render (playback for AEC) as mono/stereo
+            downmixMethod: DownmixMethod.AverageChannels // Method if downmixing is needed
+        );
+
+        // Example of changing a setting dynamically:
+        // apmModifier.NoiseSuppression.Level = NoiseSuppressionLevel.VeryHigh;
+        ```
+    </Step>
+    <Step title="Add Modifier" description="Attach the modifier to the mic component" icon='ic:baseline-plus'>
+        ### 4. Add the Modifier to the Microphone Component
+
+        ```csharp
+        micAudioComponent.AddModifier(apmModifier);
+        ```
+    </Step>
+    <Step title="Start Processing" description="Add to mixer and start playback" icon='mdi:play-box-outline'>
+        ### 5. Add the Component to the Mixer and Start Processing
+        To complete the loop for testing, add the processed microphone component to the playback device's `MasterMixer`. This will route the cleaned microphone audio to the speakers.
+
+        ```csharp
+        // Add the processed mic component to the playback device's master mixer
+        fullDuplexDevice.MasterMixer.AddComponent(micAudioComponent);
+
+        // Start the microphone provider and the player component
+        microphoneDataProvider.StartCapture();
+        micAudioComponent.Play();
+
+        Console.WriteLine("WebRTC APM processing microphone input. Press any key to stop.");
+        Console.ReadKey();
+
+        // Cleanup
+        fullDuplexDevice.Dispose(); // Disposes underlying devices and their components
+        apmModifier.Dispose();      // Important to release native resources
+        microphoneDataProvider.Dispose();
+        audioEngine.Dispose();
+        ```
+    </Step>
+</Steps>
+
+**AEC Far-End (Playback) Signal:** For Acoustic Echo Cancellation to work, the processor needs both the microphone signal (near-end) and the speaker signal (far-end). The `WebRtcApmModifier` is designed to integrate deeply with SoundFlow's architecture. It automatically detects and captures the audio being processed by the master mixer of any active playback device within the same `AudioEngine` context. This allows it to correlate the audio being sent to the speakers with the audio coming from the microphone to perform echo cancellation seamlessly.
+
+### Offline Processing with `NoiseSuppressor`
+
+The `NoiseSuppressor` component is designed for batch processing of audio from an `ISoundDataProvider` (e.g., an audio file). It applies only the WebRTC Noise Suppression feature.
+
+<Steps layout='vertical'>
+    <Step title="Initialize AudioEngine" description="Required for encoding/decoding" icon='ph:engine-bold'>
+        ### 1. Initialize SoundFlow `AudioEngine`
+        The engine is required for its decoding and encoding capabilities, even if not playing audio back.
+
+        ```csharp
+        using SoundFlow.Abstracts;
+        using SoundFlow.Backends.MiniAudio;
+        using SoundFlow.Structs;
+
+        var audioEngine = new MiniAudioEngine();
+        ```
+    </Step>
+    <Step title="Create Data Provider" description="Load your noisy audio file" icon='mdi:file-music-outline'>
+        ### 2. Create an `ISoundDataProvider` for your noisy audio file
+        Use a `StreamDataProvider` to read from an audio file.
+
+        ```csharp
+        using SoundFlow.Interfaces;
+        using SoundFlow.Providers;
+        using System.IO;
+
+        // Define the format of the source file. This is needed by the data provider.
+        var fileFormat = new AudioFormat { SampleRate = 48000, Channels = 1, Format = SampleFormat.F32 };
+        string noisyFilePath = "path/to/your/noisy_audio.wav";
+        var dataProvider = new StreamDataProvider(audioEngine, fileFormat, File.OpenRead(noisyFilePath));
+        ```
+    </Step>
+    <Step title="Instantiate NoiseSuppressor" description="Set up the offline processor" icon='icon-park-outline:sound-wave'>
+        ### 3. Instantiate `NoiseSuppressor`
+        Provide the data source and its audio parameters. These MUST match the actual properties of the audio from the data provider.
+
+        ```csharp
+        using SoundFlow.Extensions.WebRtc.Apm;
+        using SoundFlow.Extensions.WebRtc.Apm.Components;
+
+        // Parameters: dataProvider, sampleRate, numChannels, suppressionLevel
+        var noiseSuppressor = new NoiseSuppressor(dataProvider, 48000, 1, NoiseSuppressionLevel.VeryHigh);
+        ```
+    </Step>
+    <Step title="Process the Audio" description="Process all at once or in chunks" icon='carbon:cics-transaction-server-zos'>
+        ### 4. Process the audio
+        You can process all audio at once (for smaller files) or chunk by chunk.
+
+        **Option A: Process All (returns `float[]`)**
+        ```csharp
+        float[] cleanedAudio = noiseSuppressor.ProcessAll();
+        // Now 'cleanedAudio' contains the noise-suppressed audio data.
+        
+        // You can save it using an ISoundEncoder:
+        var outputFormat = new AudioFormat { SampleRate = 48000, Channels = 1, Format = SampleFormat.F32 };
+        using var fileStream = new FileStream("cleaned_audio.wav", FileMode.Create, FileAccess.Write, FileShare.None);
+        using var encoder = audioEngine.CreateEncoder(fileStream, EncodingFormat.Wav, outputFormat);
+        encoder.Encode(cleanedAudio.AsSpan());
+        ```
+
+        **Option B: Process Chunks (via event or direct handler)**
+        ```csharp
+        var outputFormatChunked = new AudioFormat { SampleRate = 48000, Channels = 1, Format = SampleFormat.F32 };
+        using var chunkFileStream = new FileStream("cleaned_audio_chunked.wav", FileMode.Create, FileAccess.Write, FileShare.None);
+        using var chunkEncoder = audioEngine.CreateEncoder(chunkFileStream, EncodingFormat.Wav, outputFormatChunked);
+
+        noiseSuppressor.OnAudioChunkProcessed += (processedChunk) =>
+        {
+            if (!chunkEncoder.IsDisposed)
+            {
+                chunkEncoder.Encode(processedChunk.ToArray());
+            }
+        };
+
+        // ProcessChunks is a blocking call until the entire provider is processed.
+        noiseSuppressor.ProcessChunks();
+        ```
+    </Step>
+    <Step title="Dispose Resources" description="Clean up all IDisposable objects" icon='material-symbols:delete-outline'>
+        ### 5. Dispose resources
+
+        ```csharp
+        noiseSuppressor.Dispose();
+        dataProvider.Dispose();
+        audioEngine.Dispose();
+        ```
+    </Step>
+</Steps>
+
+## Configuration Details
+
+### `WebRtcApmModifier` Properties:
+
+*   **`Enabled` (bool):** Enables/disables the entire APM modifier.
+*   **`EchoCancellation` (`EchoCancellationSettings`):**
+*   `Enabled` (bool): Enables/disables AEC.
+*   `MobileMode` (bool): Toggles between desktop (false) and mobile (true) AEC modes.
+*   `LatencyMs` (int): Estimated system audio latency in milliseconds. Crucial for AEC performance. Tune this value for your setup.
+*   **`NoiseSuppression` (`NoiseSuppressionSettings`):**
+*   `Enabled` (bool): Enables/disables NS.
+*   `Level` (`NoiseSuppressionLevel`): Sets the aggressiveness (Low, Moderate, High, VeryHigh).
+*   **`AutomaticGainControl` (`AutomaticGainControlSettings`):**
+*   `Agc1Enabled` (bool): Enables/disables the legacy AGC1.
+*   `Mode` (`GainControlMode`): Sets the mode for AGC1 (AdaptiveAnalog, AdaptiveDigital, FixedDigital).
+*   `TargetLevelDbfs` (int): Target level for AGC1 AdaptiveDigital mode (-31 to 0 dBFS).
+*   `CompressionGainDb` (int): Gain for AGC1 FixedDigital mode (0 to 90 dB).
+*   `LimiterEnabled` (bool): Enables/disables the limiter for AGC1.
+*   `Agc2Enabled` (bool): Enables/disables the newer AGC2.
+*   **`HighPassFilterEnabled` (bool):** Enables/disables the HPF.
+*   **`PreAmplifierEnabled` (bool):** Enables/disables the pre-amplifier.
+*   **`PreAmplifierGainFactor` (float):** Gain factor for the pre-amplifier (e.g., 1.0 is no change, 2.0 is +6dB).
+*   **`ProcessingPipeline` (`ProcessingPipelineSettings`):**
+*   `UseMultichannelCapture` (bool): If true and input is multi-channel, APM processes it as such. Otherwise, it might downmix.
+*   `UseMultichannelRender` (bool): Similar to capture, but for the far-end/render signal for AEC.
+*   `DownmixMethod` (`DownmixMethod`): Specifies how to downmix if multi-channel processing is disabled for a stream (AverageChannels, UseFirstChannel).
+*   **`PostProcessGain` (float):** A final gain applied after all APM processing (default 1.0f).
+
+### `NoiseSuppressor` Constructor:
+
+*   `dataProvider` (`ISoundDataProvider`): The audio source.
+*   `sampleRate` (int): Sample rate of the source audio (must be 8k, 16k, 32k, or 48k).
+*   `numChannels` (int): Number of channels in the source audio.
+*   `suppressionLevel` (`NoiseSuppressionLevel`): Desired noise suppression level.
+*   `useMultichannelProcessing` (bool): If true and `numChannels > 1`, attempts to process channels independently.
+
+## Licensing
+
+*   The C# code (`SoundFlow.Extensions.WebRtc.Apm` wrapper and components) is licensed under the **MIT License**.
+*   The native `webrtc-apm` library used by this extension is based on the WebRTC Audio Processing Module, which is typically licensed under the **BSD 3-Clause "New" or "Revised" License**. The specific version included is derived from the [PulseAudio project's extraction](https://gitlab.freedesktop.org/pulseaudio/webrtc-audio-processing).
+
+**Users must comply with the terms of both licenses.** This generally involves including the copyright notice and license text of the WebRTC code if distributing applications using this extension. Please consult the native library's specific distribution for exact requirements.
+
+## Troubleshooting
+
+*   **No effect or poor quality:**
+*   Verify the `AudioEngine` sample rate (set in the `AudioFormat` struct) matches one supported by WebRTC APM (8k, 16k, 32k, 48k Hz).
+*   For AEC, ensure `aecLatencyMs` is tuned appropriately for your system. Too low or too high values can degrade performance.
+*   Ensure the far-end signal is correctly being captured if AEC is enabled (usually is handled automatically by the modifier, which monitors active playback devices in the same engine context).
+*   **Errors during initialization:** Check the console output for any specific error messages from the native APM library. Ensure the native binaries are correctly deployed with your application.
+*   **Performance issues:** While WebRTC APM is optimized, processing many channels or enabling all features at very high settings can be CPU intensive. Monitor performance and adjust settings if needed.

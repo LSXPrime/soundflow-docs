@@ -1,0 +1,205 @@
+---
+id: 4.1
+title: Editing - Audio Tracks & Segments
+description: Learn how to create and manipulate audio tracks and segments, and apply settings like fades, loops, time stretching, and effects.
+navOrder: 4.1
+category: Editing
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs, Card, CardBody, CardHeader} from "@heroui/react";
+
+# Working with Audio Tracks & Segments
+
+This guide covers the core objects for building an audio timeline in SoundFlow: the `Track` and the `AudioSegment`. All modifications are performed through the `composition.Editor` service.
+
+## The `Track` Class
+
+A `Track` (`SoundFlow.Editing.Track`) represents a single audio timeline within a `Composition`, analogous to a track in a DAW.
+
+*   **Holds Segments:** A `Track` contains a list of `AudioSegment` objects, which are the audio clips placed on its timeline.
+*   **Track-Level Settings (`TrackSettings`):** Each track has its own settings object that controls its overall behavior:
+    *   **Basic Controls:** `Volume`, `Pan`, `IsMuted`, `IsSoloed`, `IsEnabled`.
+    *   **Effects Chain:** A track can have its own chain of `SoundModifier` and `AudioAnalyzer` instances that process the mixed output of all its segments.
+
+### Creating and Adding a Track
+
+You create a `Track` instance and then add it to the composition using the `Editor` service.
+
+```csharp
+using SoundFlow.Editing;
+
+// Assuming 'composition' is an existing Composition instance.
+var track1 = new Track("Lead Vocals");
+
+// Configure track settings
+track1.Settings.Volume = 0.8f;
+track1.Settings.Pan = 0.45f; // Slightly to the left
+
+// Add a track-level effect, like a compressor
+// var trackCompressor = new CompressorModifier(composition.Format, -18f, 4f, 10f, 150f);
+// track1.Settings.AddModifier(trackCompressor);
+
+// Add the track to the composition
+composition.Editor.AddTrack(track1);
+```
+
+## The `AudioSegment` Class
+
+The `AudioSegment` (`SoundFlow.Editing.AudioSegment`) is the fundamental building block for audio content. It represents a specific portion of an audio source placed at a particular time on the track's timeline.
+
+*   **Source Reference:** Points to an `ISoundDataProvider` for its audio data.
+*   **Timeline Placement:**
+    *   `SourceStartTime`: The time offset within the `ISoundDataProvider` from which this segment begins.
+    *   `SourceDuration`: The duration of audio to use from the `ISoundDataProvider`.
+    *   `TimelineStartTime`: The time at which this segment starts on the parent `Track`'s timeline.
+*   **Segment-Level Settings (`AudioSegmentSettings`):** Each segment has its own granular settings for ultimate control.
+*   **Non-Destructive:** All operations (trimming, fades, stretching) are applied at runtime and do not alter the original audio source.
+
+### Creating and Adding an Audio Segment
+
+The recommended way to create a segment from a file is using the `composition.Editor.CreateAndAddSegmentFromFile` helper method.
+
+```csharp
+using SoundFlow.Editing;
+using SoundFlow.Structs;
+using System;
+using System.IO;
+using System.Threading.Tasks;
+
+public async Task BuildAudioTrack(Composition composition, Track track)
+{
+    // This helper method reads the file, creates the provider, creates the segment,
+    // and adds it to the track in one step.
+    var vocalSegment = composition.Editor.CreateAndAddSegmentFromFile(
+        track,
+        "path/to/vocals.wav",
+        TimeSpan.FromSeconds(2) // Place the segment at 2 seconds on the timeline
+    );
+
+    // Now you can configure the segment's settings
+    vocalSegment.Settings.Volume = 0.95f;
+
+    // Apply a 200ms S-Curve fade-in
+    vocalSegment.Settings.FadeInDuration = TimeSpan.FromMilliseconds(200);
+    vocalSegment.Settings.FadeInCurve = FadeCurveType.SCurve;
+
+    // Apply a segment-level effect
+    // var segmentReverb = new AlgorithmicReverbModifier(composition.Format);
+    // vocalSegment.Settings.AddModifier(segmentReverb);
+}
+```
+
+## Advanced `AudioSegmentSettings`
+
+The `AudioSegmentSettings` class provides powerful, non-destructive control over how a segment is played back.
+
+<Tabs color="primary" variant="bordered" aria-label="Advanced Segment Settings" className="mt-4">
+    <Tab
+        key="time-stretch"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='material-symbols:timelapse-outline' />
+                <span>Time Stretching (Pitch Preserved)</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                This feature changes the duration of an audio segment **without affecting its pitch**. It's ideal for fitting audio to a specific time slot or for creative sound design. It is powered by a high-quality **WSOLA (Waveform Similarity Overlap-Add)** algorithm.
+
+                You can control stretching in two ways:
+                <ul className="list-disc pl-5 mt-2 space-y-2">
+                    <li>
+                        <strong>`TimeStretchFactor` (float):</strong> A multiplier for the duration.
+                        <ul className="list-disc pl-5 mt-1">
+                            <li>`1.0`: No change.</li>
+                            <li>`2.0`: Doubles the duration (plays at half speed).</li>
+                            <li>`0.5`: Halves the duration (plays at double speed).</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>`TargetStretchDuration` (TimeSpan?):</strong> Overrides `TimeStretchFactor`. The segment will be stretched or compressed to match this exact duration. Set to `null` to disable.
+                    </li>
+                </ul>
+                ```csharp
+                // Make a segment 25% longer without changing its pitch.
+                mySegment.Settings.TimeStretchFactor = 1.25f;
+
+                // Or, stretch a segment to be exactly 5.5 seconds long.
+                mySegment.Settings.TargetStretchDuration = TimeSpan.FromSeconds(5.5);
+                ```
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="varispeed"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='mdi:speedometer' />
+                <span>Speed Control (Varispeed)</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                The `SpeedFactor` property provides traditional speed control, affecting both **tempo and pitch** simultaneously, like changing the speed of a tape machine.
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>`1.0`: Normal speed and pitch.</li>
+                    <li>`2.0`: Double speed, pitch shifted up one octave.</li>
+                    <li>`0.5`: Half speed, pitch shifted down one octave.</li>
+                </ul>
+                <Card className="bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20 my-4">
+                    <CardBody>
+                        <div className="flex items-center gap-3">
+                            <Icon icon="lucide:layers" className="text-primary text-2xl flex-shrink-0" />
+                            <p className="text-sm">
+                                <strong>Order of Operations:</strong> Time stretching is applied to the source audio <em>first</em>, and then `SpeedFactor` is applied to the time-stretched result.
+                            </p>
+                        </div>
+                    </CardBody>
+                </Card>
+                ```csharp
+                // Play a segment at half speed (and an octave lower).
+                mySegment.Settings.SpeedFactor = 0.5f;
+                ```
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="looping"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='mdi:repeat' />
+                <span>Looping</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                The `Loop` property, an instance of `LoopSettings`, controls segment repetition.
+
+                <ul className="list-disc pl-5 mt-2 space-y-2">
+                    <li>
+                        <strong>`IsEnabled` (bool):</strong> Toggles looping on or off.
+                    </li>
+                    <li>
+                        <strong>`Repetitions` (int?):</strong> If set, the segment will repeat a specific number of times. The total duration on the timeline will be `EffectiveDurationOnTimeline * (Repetitions + 1)`.
+                    </li>
+                    <li>
+                        <strong>`FillDuration` (TimeSpan?):</strong> If set, this overrides `Repetitions`. The segment will loop as many times as needed (including partial loops) to fill the specified duration on the timeline.
+                    </li>
+                </ul>
+
+                ```csharp
+                // Loop a segment 3 times (will play a total of 4 times).
+                mySegment.Settings.Loop = new LoopSettings { IsEnabled = true, Repetitions = 3 };
+
+                // Loop a 2-second segment to fill a 10-second space on the timeline.
+                // It will play 5 times.
+                mySegment.Settings.Loop = new LoopSettings { IsEnabled = true, FillDuration = TimeSpan.FromSeconds(10) };
+                ```
+            </CardBody>
+        </Card>
+    </Tab>
+</Tabs>

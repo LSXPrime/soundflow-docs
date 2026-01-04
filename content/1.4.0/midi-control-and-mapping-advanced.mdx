@@ -1,0 +1,418 @@
+﻿---
+id: 13.5
+title: MIDI Control & Mapping (Advanced)
+description: A deep dive into programmatically creating complex MIDI mappings, handling relative encoders, triggering methods, and using High-Resolution (14-bit) MIDI.
+navOrder: 13.5
+category: MIDI
+---
+
+# MIDI Control & Mapping (Advanced)
+
+The introductory guide covered how to expose parameters on your custom components using the `[ControllableParameter]` attribute. This advanced guide focuses on the **consumer side**: how to programmatically create, configure, and manage `MidiMapping` objects to link physical hardware controls to those exposed parameters.
+
+This level of control is essential for building applications with:
+*   **User-Configurable MIDI Maps:** allowing users to "MIDI Learn" knobs and faders.
+*   **Dynamic Control Surfaces:** swapping mappings on the fly based on context.
+*   **Complex Behaviors:** triggering methods with arguments, handling endless encoders, or using high-resolution 14-bit MIDI messages.
+
+## The `MidiMapping` Anatomy
+
+A `MidiMapping` is a data structure that defines a single connection in the routing graph. It consists of four distinct parts: **Source**, **Target**, **Transformer**, and **Behavior**.
+
+### 1. The Source (`MidiInputSource`)
+
+This record defines exactly which incoming MIDI message will trigger the mapping.
+
+```csharp
+public record MidiInputSource
+{
+    public string DeviceName { get; init; }
+    public int Channel { get; init; }
+    public MidiMappingSourceType MessageType { get; init; }
+    public int MessageParameter { get; init; }
+}
+```
+
+| Property               | Description                                                                                                                                                                                                                    |
+|:-----------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`DeviceName`**       | The exact name of the physical MIDI input device (e.g., `"Launchkey Mini MK3"`). This allows mappings to distinguish between identical messages (like CC #1) coming from different controllers.                                |
+| **`Channel`**          | The MIDI channel (1-16) to listen to. Set this to **0** for **Omni Mode** (listen to all channels).                                                                                                                            |
+| **`MessageType`**      | The type of message. Options: `ControlChange`, `NoteOn`, `NoteOff`, `PitchBend`, or `HighResolutionControlChange`.                                                                                                             |
+| **`MessageParameter`** | The specific identifier for the message type:<br/>• **CC:** The Controller Number (0-127).<br/>• **Note:** The Note Number (0-127).<br/>• **HighRes CC:** The 14-bit NRPN/RPN number.<br/>• **PitchBend:** Ignored (set to 0). |
+
+### 2. The Target (`MidiMappingTarget`)
+
+This record defines the destination within your SoundFlow project.
+
+```csharp
+public record MidiMappingTarget
+{
+    public Guid TargetObjectId { get; init; }
+    public MidiMappingTargetType TargetType { get; init; }
+    public string TargetMemberName { get; init; }
+    public List<MethodArgument> MethodArguments { get; init; }
+}
+```
+
+*   **`TargetObjectId`**: The unique `Guid` of the object implementing `IMidiMappable` (e.g., a specific `Filter` instance or `TrackSettings`). This ID allows the system to find the exact object instance even after a project is saved and reloaded.
+*   **`TargetType`**: Specifies if the target is a `Property` (for setting values) or a `Method` (for triggering actions).
+*   **`TargetMemberName`**: The exact, case-sensitive string name of the public property or method you want to control (e.g., `"CutoffFrequency"` or `"TriggerSample"`).
+
+### 3. The Transformation (`ValueTransformer`)
+
+This record defines the math for converting the MIDI input range into the parameter's native range.
+
+```csharp
+public record ValueTransformer
+{
+    public float SourceMin { get; init; }
+    public float SourceMax { get; init; }
+    public float TargetMin { get; init; }
+    public float TargetMax { get; init; }
+    public MidiMappingCurveType CurveType { get; init; }
+}
+```
+
+The transformation pipeline works in three stages:
+1.  **Normalization:** The incoming MIDI value (bounded by `SourceMin`/`SourceMax`) is converted to a normalized `0.0` to `1.0` float.
+2.  **Curve Application:** The normalized value is warped by the `CurveType` (Linear, Exponential, or Logarithmic).
+3.  **De-normalization:** The curved value (bounded by `TargetMin`/`TargetMax`) is scaled to the parameter's actual `MinValue`/`MaxValue` defined in its attribute.
+
+### 4. The Behavior (`MidiMappingBehavior`)
+
+This enum dictates how the transformed value is applied to the target.
+
+| Behavior       | Best Use Case    | Description                                                                                    |
+|:---------------|:-----------------|:-----------------------------------------------------------------------------------------------|
+| **`Absolute`** | Faders, Knobs    | The MIDI value directly sets the property value. 0 = Min, 127 = Max.                           |
+| **`Relative`** | Endless Encoders | Interprets values around 64. < 64 decrements the property, > 64 increments it.                 |
+| **`Toggle`**   | Buttons          | Flips a boolean property between `true` and `false` each time the input exceeds the threshold. |
+| **`Trigger`**  | Buttons, Pads    | Executes a method on the target object.                                                        |
+
+---
+
+## Programmatic Mapping Examples
+
+### 1. Absolute Control (Knob to Filter Cutoff)
+
+This example maps MIDI CC #74 to a Filter's Cutoff Frequency. It uses a **Logarithmic** curve, which is critical for frequency parameters to ensure the knob feels musical (smooth changes in pitch) rather than linear (where 0-1000Hz takes up only 5% of the knob).
+
+```csharp
+// 1. Create the components
+var filter = new Filter(AudioFormat.DvdHq) { CutoffFrequency = 1000f };
+var track = new Track("Synth");
+track.Settings.AddModifier(filter);
+composition.Editor.AddTrack(track);
+
+// 2. Define Source: CC 74 on Channel 1
+var source = new MidiInputSource
+{
+    DeviceName = "My MIDI Keyboard",
+    Channel = 1,
+    MessageType = MidiMappingSourceType.ControlChange,
+    MessageParameter = 74
+};
+
+// 3. Define Target: The 'CutoffFrequency' property on our filter instance
+var target = new MidiMappingTarget
+{
+    TargetObjectId = filter.Id,
+    TargetType = MidiMappingTargetType.Property,
+    TargetMemberName = nameof(Filter.CutoffFrequency)
+};
+
+// 4. Define Transformer: Logarithmic mapping
+// Source: Standard MIDI 0-127
+// Target: 0.0-1.0 (Full range of the parameter's Min/Max defined in attribute)
+var transformer = new ValueTransformer
+{
+    SourceMin = 0,
+    SourceMax = 127,
+    TargetMin = 0.0f,
+    TargetMax = 1.0f,
+    CurveType = MidiMappingCurveType.Logarithmic
+};
+
+// 5. Create and Register
+var mapping = new MidiMapping(source, target, transformer, MidiMappingBehavior.Absolute);
+composition.MappingManager.AddMapping(mapping);
+```
+
+### Complete Example: Creating a Property Mapping
+
+This example shows the full process of creating a mapping from scratch to control a property on a `SoundModifier`. We will use the `BitCrusherModifier` defined in the Introduction guide.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Editing;
+using SoundFlow.Editing.Mapping;
+using SoundFlow.Interfaces;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Structs;
+using System.Linq;
+
+/// <summary>
+/// This program demonstrates how to programmatically create a real-time MIDI mapping.
+/// It links a physical knob on a MIDI controller (CC #21) to the 'DownsampleFactor'
+/// parameter of a custom BitCrusher audio effect.
+///
+/// A sound player is used to play audio segment, which is processed by the BitCrusher.
+/// When the user turns the mapped knob, the bit-crushing effect is audible in real-time.
+/// </summary>
+public static class Program
+{
+    public static void Main()
+    {
+        // 1. Standard Engine & MIDI Backend Setup
+        using var engine = new MiniAudioEngine();
+        engine.UsePortMidi();
+        engine.UpdateMidiDevicesInfo();
+        var format = AudioFormat.DvdHq;
+
+        // Initialize a normal output device for audio playback
+        engine.UpdateAudioDevicesInfo();
+        var playbackDevice = engine.InitializePlaybackDevice(engine.PlaybackDevices.FirstOrDefault(x => x.IsDefault), format);
+
+        // 2. Create a Composition and Target Component
+        var composition = new Composition(engine, format);
+        var audioTrack = new Track("My Audio Track");
+        composition.Editor.AddTrack(audioTrack);
+
+        // Create our custom modifier
+        var bitCrusher = new BitCrusherModifier();
+        audioTrack.Settings.AddModifier(bitCrusher);
+
+        // IMPORTANT: We need the ID to link the mapping.
+        Console.WriteLine($"Created BitCrusher with ID: {bitCrusher.Id}");
+
+        // Create an audio segment to play and test the modifier on, and add it to the track
+        var audioSegment = composition.Editor.CreateSegmentFromFile("path/to/audio.wav", TimeSpan.Zero);
+        audioTrack.AddSegment(audioSegment);
+
+        // 3. Define the Mapping
+        var inputDeviceInfo = engine.MidiInputDevices.FirstOrDefault();
+        if (inputDeviceInfo.Name == null)
+        {
+            Console.WriteLine("No MIDI input device found. Cannot create mapping.");
+            return;
+        }
+
+        // a) Define the MIDI Source (e.g., CC #21 on our keyboard)
+        var source = new MidiInputSource
+        {
+            DeviceName = inputDeviceInfo.Name,
+            Channel = 0, // Omni: listen on all channels
+            MessageType = MidiMappingSourceType.ControlChange,
+            MessageParameter = 21 // The CC number to listen for
+        };
+
+        // b) Define the Target (the 'DownsampleFactor' property of our BitCrusher)
+        var target = new MidiMappingTarget
+        {
+            TargetObjectId = bitCrusher.Id, // Link to our specific BitCrusher instance
+            TargetType = MidiMappingTargetType.Property,
+            TargetMemberName = nameof(BitCrusherModifier.DownsampleFactor) // Must match the property name exactly
+        };
+
+        // c) Define the Transformer (map MIDI 0-127 to parameter 1.0-50.0)
+        // Note: The [ControllableParameter] attribute on BitCrusher already defines the Min/Max (1.0 to 50.0)
+        // and the Scale (Logarithmic). The transformer below maps the MIDI range to the
+        // *normalized* range (0.0 to 1.0) of that parameter.
+        var transformer = new ValueTransformer
+        {
+            SourceMin = 0,
+            SourceMax = 127,
+            TargetMin = 0.0f,
+            TargetMax = 1.0f,
+            CurveType = MidiMappingCurveType.Linear // Use Linear here, the attribute handles the log scale.
+        };
+
+        // 4. Create the MidiMapping Object
+        var mapping = new MidiMapping(source, target, transformer, MidiMappingBehavior.Absolute);
+
+        // 5. Add the mapping to the manager
+        composition.MappingManager.AddMapping(mapping);
+        Console.WriteLine($"Mapping created: CC #21 on '{inputDeviceInfo.Name}' -> BitCrusher.DownsampleFactor");
+
+        // 6. To make it listen, we must add the device to the manager.
+        // GetOrCreateInputNode initializes the device and makes the manager aware of it.
+        var inputNode = engine.MidiManager.GetOrCreateInputNode(inputDeviceInfo);
+        composition.MappingManager.AddInputDevice(inputNode.Device);
+
+        // 7. Start Playback
+        var soundPlayer = new SoundPlayer(engine, format, composition.Renderer);
+        playbackDevice.MasterMixer.AddComponent(soundPlayer);
+        playbackDevice.Start();
+        soundPlayer.Play();
+
+        Console.WriteLine("\nAudio is now playing. Turn CC knob #21 on your controller to hear the effect.");
+        Console.WriteLine("Press any key to exit.");
+        Console.ReadKey();
+
+        // Clean up resources
+        playbackDevice.Stop();
+        composition.Dispose();
+    }
+}
+```
+
+---
+
+### 2. Triggering Methods (Pad to Effect)
+
+The `Trigger` behavior allows you to map a MIDI message to a method call, passing arguments derived from the MIDI message itself or as fixed constants.
+
+### Method Target Example
+
+Consider a custom component with this method:
+```csharp
+public class EffectController : SoundComponent
+{
+    // ... constructor ...
+    public void TriggerStutter(float durationMs, bool quantize) { ... }
+    // ...
+}
+```
+
+We will map a **Note On** message to this method. The **Velocity** will control the `durationMs`, and `quantize` will be fixed to `true`.
+
+```csharp
+var target = new MidiMappingTarget
+{
+    TargetObjectId = effectController.Id,
+    TargetType = MidiMappingTargetType.Method,
+    TargetMemberName = "TriggerStutter",
+    MethodArguments = new List<MethodArgument>
+    {
+        // Argument 1: 'durationMs' (float)
+        // Mapped dynamically from Note Velocity
+        new MethodArgument
+        {
+            Source = MidiMappingArgumentSource.MidiValue,
+            // Scale velocity (0-127) to normalized float range (0.0-1.0).
+            // The method logic inside 'TriggerStutter' should handle scaling this
+            // to actual milliseconds, or rely on [ControllableParameter] metadata if present.
+            Transformer = new ValueTransformer { SourceMin = 0, SourceMax = 127 }
+        },
+
+        // Argument 2: 'quantize' (bool)
+        // Fixed constant
+        new MethodArgument
+        {
+            Source = MidiMappingArgumentSource.Constant,
+            ConstantValue = true
+        }
+    }
+};
+
+var mapping = new MidiMapping(source, target, new ValueTransformer(), MidiMappingBehavior.Trigger)
+{
+    ActivationThreshold = 1 // Only trigger if velocity > 0
+};
+
+composition.MappingManager.AddMapping(mapping);
+```
+
+### 3. Relative Encoders (Endless Knobs)
+
+"Endless" encoders often send relative MIDI messages (e.g., `65` for +1 step right, `63` for -1 step left) rather than absolute values. SoundFlow's `Relative` behavior handles this automatically using specific math.
+
+**The Internal Math:**
+
+
+
+<p>
+  <span class="katex-display">
+    $$ \Delta = \text{Input} - 64 $$
+
+    $$ \text{StepSize} = \frac{\text{AttrMax} - \text{AttrMin}}{\text{SourceMax} - \text{SourceMin}} $$
+
+    $$ \text{NewValue} = \text{OldValue} + (\Delta \times \text{StepSize}) $$
+  </span>
+</p>
+
+**Tuning Sensitivity:**
+To change the speed (sensitivity) of the knob, you adjust the `SourceMax` and `SourceMin` of the transformer.
+*   **Faster/Coarse Control:** Set a **smaller range** (e.g., 0 to 20). This decreases the denominator, making the `StepSize` larger.
+*   **Slower/Fine Control:** Set a **larger range** (e.g., 0 to 1000). This increases the denominator, making the `StepSize` smaller.
+
+```csharp
+// Configure for a relative encoder
+var transformer = new ValueTransformer
+{
+    // A range of 100 (0 to 100) gives a moderate sensitivity.
+    // Reduce this range (e.g., 0 to 50) to make the knob move the parameter FASTER.
+    SourceMin = 0,
+    SourceMax = 100,
+    TargetMin = 0.0f,
+    TargetMax = 1.0f
+};
+
+var mapping = new MidiMapping(source, target, transformer, MidiMappingBehavior.Relative);
+```
+
+---
+
+## High-Resolution MIDI (NRPN/RPN)
+
+Standard MIDI CCs are limited to 128 steps (7-bit). This can cause "zipper noise" when controlling sensitive parameters like filter cutoffs.
+
+SoundFlow v1.3 includes a dedicated, built-in **High-Resolution CC Parser** (`HighResCcParser`) within the `MidiMappingManager`. It automatically detects and reassembles standard 14-bit NRPN (Non-Registered Parameter Number) and RPN sequences.
+
+**How it works internally:**
+1.  The manager listens for CC 99 (NRPN MSB) and CC 98 (NRPN LSB) to identify the parameter index.
+2.  It waits for CC 6 (Data Entry MSB) and optionally CC 38 (Data Entry LSB).
+3.  It combines the Data MSB and LSB into a single **14-bit value** (0-16383).
+4.  It triggers any mapping configured with `MessageType = HighResolutionControlChange` matching the NRPN index.
+
+**How to use it:**
+You simply treat the NRPN number as the `MessageParameter`.
+
+```csharp
+// Example: Mapping NRPN #1024 to a parameter.
+// NRPN 1024 corresponds to MSB 8, LSB 0 (8 * 128 + 0).
+
+var source = new MidiInputSource
+{
+    DeviceName = "My High-Res Synth",
+    Channel = 1,
+    MessageType = MidiMappingSourceType.HighResolutionControlChange, // <--- Key Type
+    MessageParameter = 1024 // The raw 14-bit NRPN number
+};
+
+var transformer = new ValueTransformer
+{
+    SourceMin = 0,
+    SourceMax = 16383, // Map the full 14-bit input range
+    TargetMin = 0.0f,
+    TargetMax = 1.0f
+};
+
+var mapping = new MidiMapping(source, target, transformer, MidiMappingBehavior.Absolute);
+composition.MappingManager.AddMapping(mapping);
+```
+
+## Mapping Lifecycle
+
+### Persistence
+Mappings are automatically saved and loaded as part of the `.sfproj` file via the `CompositionProjectManager`. The `Guid` (`TargetObjectId`) ensures that when a project is loaded, the mapping reconnects to the correct `SoundModifier` instance, even if tracks were reordered.
+
+### Resolution
+When a project is loaded, the `MidiMappingManager` attempts to "resolve" mappings.
+*   **`IsResolved` Property:** Each mapping has this boolean flag.
+*   If `IsResolved` is **true**, the mapping is active.
+*   If `IsResolved` is **false**, it means the target object (Guid) or the specific property name could not be found (e.g., the effect was deleted from the track). The mapping remains in the list (so you can inspect it or fix it) but will not process MIDI.
+
+### Debugging
+To debug mapping issues, you can subscribe to the `MidiInputDevice` events directly before they reach the mapping manager to ensure hardware is sending what you expect.
+
+```csharp
+// Debugging helper
+var inputNode = engine.MidiManager.GetOrCreateInputNode(myDeviceInfo);
+inputNode.OnMessageOutput += (msg) =>
+{
+    Console.WriteLine($"DEBUG MIDI: Ch{msg.Channel} Cmd{msg.Command} D1:{msg.Data1} D2:{msg.Data2}");
+};
+```

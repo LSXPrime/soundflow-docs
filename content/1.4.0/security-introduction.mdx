@@ -1,0 +1,169 @@
+---
+id: 21
+title: Introduction to Security
+description: An overview of SoundFlow's comprehensive security suite, including encryption, digital signatures, watermarking, and acoustic fingerprinting.
+navOrder: 21
+category: Security
+---
+
+import { Card, CardHeader, CardBody, Chip, Divider } from "@heroui/react";
+import { Icon } from "@iconify/react";
+
+# Security & Protection
+
+With the release of **v1.4**, SoundFlow introduces a dedicated `SoundFlow.Security` namespace. This suite of tools is designed to address the growing needs of modern audio applications: protecting intellectual property, ensuring content authenticity, and identifying audio assets.
+
+We call this the **Secure Audio Pipeline**. It allows you to protect audio assets from the moment they are recorded or generated, all the way through distribution and playback, without ever exposing the raw PCM data to unauthorized access.
+
+## The Four Pillars of Security
+
+SoundFlow's security architecture is built on four distinct but complementary pillars, each serving a specific role in the asset lifecycle.
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+    <Card>
+        <CardHeader className="pb-0 pt-4 px-4 flex-col items-start">
+            <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 rounded-medium bg-primary/20 text-primary">
+                    <Icon icon="lucide:lock" width="24" />
+                </div>
+                <h4 className="font-bold text-large">Encryption</h4>
+            </div>
+            <p className="text-tiny font-bold uppercase text-foreground/50">Confidentiality</p>
+        </CardHeader>
+        <CardBody className="overflow-visible py-2">
+            <p className="text-default-500 text-sm">
+                Prevents unauthorized access to your audio content. SoundFlow uses **AES-256-CTR** stream encryption, allowing for secure, seekable playback without padding.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-4">
+                <Chip size="sm" color="primary" variant="shadow">AES-256</Chip>
+                <Chip size="sm" color="primary" variant="shadow">Stream Cipher</Chip>
+                <Chip size="sm" color="primary" variant="shadow">Zero-Latency</Chip>
+            </div>
+        </CardBody>
+    </Card>
+
+    <Card>
+        <CardHeader className="pb-0 pt-4 px-4 flex-col items-start">
+            <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 rounded-medium bg-success/20 text-success">
+                    <Icon icon="lucide:file-signature" width="24" />
+                </div>
+                <h4 className="font-bold text-large">Digital Signatures</h4>
+            </div>
+            <p className="text-tiny font-bold uppercase text-foreground/50">Authenticity & Integrity</p>
+        </CardHeader>
+        <CardBody className="overflow-visible py-2">
+            <p className="text-default-500 text-sm">
+                Verifies that a file comes from a trusted source and hasn't been altered. We use **ECDSA (P-384)** signatures, which can be embedded directly into secure audio containers or detached as `.sig` files.
+            </p>
+             <div className="flex flex-wrap gap-2 mt-4">
+                <Chip size="sm" color="success" variant="shadow">ECDSA P-384</Chip>
+                <Chip size="sm" color="success" variant="shadow">Embedded</Chip>
+                <Chip size="sm" color="success" variant="shadow">Detached</Chip>
+            </div>
+        </CardBody>
+    </Card>
+
+    <Card>
+        <CardHeader className="pb-0 pt-4 px-4 flex-col items-start">
+            <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 rounded-medium bg-warning/20 text-warning">
+                    <Icon icon="lucide:droplets" width="24" />
+                </div>
+                <h4 className="font-bold text-large">Watermarking</h4>
+            </div>
+            <p className="text-tiny font-bold uppercase text-foreground/50">Provenance & Tracking</p>
+        </CardHeader>
+        <CardBody className="overflow-visible py-2">
+            <p className="text-default-500 text-sm">
+                Embeds hidden data directly into the audio signal. Use **Ownership Watermarks** (Robust/DSSS) to track distribution or **Integrity Watermarks** (Fragile/LSB) to detect tampering in real-time.
+            </p>
+             <div className="flex flex-wrap gap-2 mt-4">
+                <Chip size="sm" color="warning" variant="shadow">Robust (DSSS)</Chip>
+                <Chip size="sm" color="warning" variant="shadow">Fragile (LSB)</Chip>
+                <Chip size="sm" color="warning" variant="shadow">Steganography</Chip>
+            </div>
+        </CardBody>
+    </Card>
+
+    <Card>
+        <CardHeader className="pb-0 pt-4 px-4 flex-col items-start">
+            <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 rounded-medium bg-secondary/20 text-secondary">
+                    <Icon icon="lucide:fingerprint" width="24" />
+                </div>
+                <h4 className="font-bold text-large">Acoustic Fingerprinting</h4>
+            </div>
+            <p className="text-tiny font-bold uppercase text-foreground/50">Identification</p>
+        </CardHeader>
+        <CardBody className="overflow-visible py-2">
+            <p className="text-default-500 text-sm">
+                Identifies audio content by its unique acoustic characteristics. Generate fingerprints based on spectral peaks and match unknown audio clips against a database of known tracks.
+            </p>
+             <div className="flex flex-wrap gap-2 mt-4">
+                <Chip size="sm" color="secondary" variant="shadow">Spectral Analysis</Chip>
+                <Chip size="sm" color="secondary" variant="shadow">Noise Resilient</Chip>
+                <Chip size="sm" color="secondary" variant="shadow">Fast Matching</Chip>
+            </div>
+        </CardBody>
+    </Card>
+</div>
+
+## Common Cases
+
+<div className="flex flex-col gap-4 mt-6">
+    <div className="flex gap-4 items-start">
+        <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg text-primary">
+            <Icon icon="carbon:software-resource-cluster" width={24} />
+        </div>
+        <div>
+            <h4 className="font-semibold">Secure Asset Distribution</h4>
+            <p className="text-default-500 text-sm">
+                A DAW or game engine developer wants to distribute premium sample packs. By using **Encryption**, the samples can only be used within the authorized application. **Digital Signatures** ensure the packs weren't corrupted or injected with malware during download.
+            </p>
+        </div>
+    </div>
+    <Divider />
+    <div className="flex gap-4 items-start">
+        <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg text-primary">
+            <Icon icon="carbon:user-identification" width={24} />
+        </div>
+        <div>
+            <h4 className="font-semibold">Leak Tracking</h4>
+            <p className="text-default-500 text-sm">
+                A studio sends pre-release tracks to reviewers. Using **Robust Watermarking**, they embed the reviewer's unique ID into the audio. If the track leaks online, the studio can extract the watermark to identify the source of the leak, even if the file was re-encoded to MP3.
+            </p>
+        </div>
+    </div>
+    <Divider />
+    <div className="flex gap-4 items-start">
+        <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg text-primary">
+            <Icon icon="carbon:music" width={24} />
+        </div>
+        <div>
+            <h4 className="font-semibold">Broadcast Monitoring</h4>
+            <p className="text-default-500 text-sm">
+                A radio station or streaming service needs to report which songs are played for royalty purposes. Using **Acoustic Fingerprinting**, the system listens to the broadcast stream and automatically identifies songs by matching them against a database.
+            </p>
+        </div>
+    </div>
+    <Divider />
+    <div className="flex gap-4 items-start">
+        <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg text-primary">
+            <Icon icon="carbon:document-security" width={24} />
+        </div>
+        <div>
+            <h4 className="font-semibold">Authenticated Archival</h4>
+            <p className="text-default-500 text-sm">
+                A legal firm needs to archive sensitive recordings like court depositions. By embedding a fragile **Integrity Watermark**, they create a verifiable chain of hashes within the audio. If any part of the recording is edited or tampered with, the hash chain breaks, immediately flagging the exact location of the alteration.
+            </p>
+        </div>
+    </div>
+</div>
+---
+
+## Where to Start?
+
+*   **[Encryption & Signatures](./security-encryption-and-signatures):** Learn how to secure your files and verify their origin.
+*   **[Audio Watermarking](./security-watermarking):** Learn how to embed invisible data into your audio.
+*   **[Acoustic Fingerprinting](./security-acoustic-fingerprinting):** Learn how to identify audio content programmatically.

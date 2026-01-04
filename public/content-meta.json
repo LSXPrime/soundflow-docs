@@ -2,6 +2,348 @@
   {
     "id": 11,
     "slug": "webrtc-apm",
+    "version": "1.4.0",
+    "title": "WebRTC Audio Processing Module (APM) Extension",
+    "description": "Integrate advanced voice processing capabilities like Echo Cancellation, Noise Suppression, and Automatic Gain Control into SoundFlow using the WebRTC APM Extension.",
+    "navOrder": 11,
+    "category": "Extensions"
+  },
+  {
+    "id": 13.8,
+    "slug": "utilities-and-debugging",
+    "version": "1.4.0",
+    "title": "Utilities & Debugging",
+    "description": "A guide to the essential utility classes in SoundFlow, including centralized logging, high-performance channel mixing, and signal processing math helpers.",
+    "navOrder": 13.8,
+    "category": "Core"
+  },
+  {
+    "id": 8,
+    "slug": "tutorials-recording",
+    "version": "1.4.0",
+    "title": "Recording Audio",
+    "description": "Comprehensive tutorials for recording audio from devices and processing it in real-time with SoundFlow.",
+    "navOrder": 8,
+    "category": "Tutorials and Examples"
+  },
+  {
+    "id": 7,
+    "slug": "tutorials-playback",
+    "version": "1.4.0",
+    "title": "Playback Fundamentals",
+    "description": "Comprehensive tutorials for playing audio files, streams, and controlling playback with the SoundFlow C# audio library.",
+    "navOrder": 7,
+    "category": "Tutorials and Examples"
+  },
+  {
+    "id": 9,
+    "slug": "tutorials-modifiers",
+    "version": "1.4.0",
+    "title": "Audio Modifiers & Effects",
+    "description": "Comprehensive tutorials for applying various audio effects and modifiers (reverb, EQ, compression, etc.) with SoundFlow.",
+    "navOrder": 9,
+    "category": "Tutorials and Examples"
+  },
+  {
+    "id": 10,
+    "slug": "tutorials-analysis",
+    "version": "1.4.0",
+    "title": "Audio Analysis & Visualization",
+    "description": "Comprehensive tutorials for analyzing audio streams (level, spectrum, VAD) and visualizing data with SoundFlow.",
+    "navOrder": 10,
+    "category": "Tutorials and Examples"
+  },
+  {
+    "id": 14,
+    "slug": "synthesis-synthesizer-component",
+    "version": "1.4.0",
+    "title": "The Synthesizer Component",
+    "description": "A comprehensive guide to the core Synthesizer component, its architecture, how it generates sound from MIDI, and its role in the audio graph.",
+    "navOrder": 14,
+    "category": "Synthesis"
+  },
+  {
+    "id": 19,
+    "slug": "synthesis-soundfont-support",
+    "version": "1.4.0",
+    "title": "SoundFont (.sf2) Support",
+    "description": "A practical guide to loading and using industry-standard SoundFont 2 files as instruments within the SoundFlow synthesizer.",
+    "navOrder": 19,
+    "category": "Synthesis"
+  },
+  {
+    "id": 18,
+    "slug": "synthesis-sequencer-component",
+    "version": "1.4.0",
+    "title": "The Sequencer Component",
+    "description": "Learn to use the Sequencer component for high-precision, tempo-aware playback of MIDI data from files or memory.",
+    "navOrder": 18,
+    "category": "Synthesis"
+  },
+  {
+    "id": 16,
+    "slug": "synthesis-multi-timbrality-in-depth",
+    "version": "1.4.0",
+    "title": "Multitimbrality in Depth",
+    "description": "Learn how the SoundFlow synthesizer handles Multitimbrality, allowing you to play different instruments on different MIDI channels simultaneously from a single component.",
+    "navOrder": 16,
+    "category": "Synthesis"
+  },
+  {
+    "id": 17,
+    "slug": "synthesis-mpe-support",
+    "version": "1.4.0",
+    "title": "MPE (MIDI Polyphonic Expression) Support",
+    "description": "A guide to enabling and using MPE with the SoundFlow synthesizer for advanced, per-note expressive control.",
+    "navOrder": 17,
+    "category": "Synthesis"
+  },
+  {
+    "id": 20,
+    "slug": "synthesis-layering-with-multiinstrumentbank",
+    "version": "1.4.0",
+    "title": "Layering with MultiInstrumentBank",
+    "description": "Learn how to layer multiple instrument banks to create complex, layered sounds or custom fallback behaviors using the MultiInstrumentBank.",
+    "navOrder": 20,
+    "category": "Synthesis"
+  },
+  {
+    "id": 15,
+    "slug": "synthesis-instrument-model",
+    "version": "1.4.0",
+    "title": "The Instrument Model",
+    "description": "An in-depth look at the data model that defines a synthesizer sound, including Instrument Banks, Voice Mappings, and Voice Definitions.",
+    "navOrder": 15,
+    "category": "Synthesis"
+  },
+  {
+    "id": 23,
+    "slug": "security-watermarking",
+    "version": "1.4.0",
+    "title": "Audio Watermarking",
+    "description": "Learn how to embed invisible data into your audio for ownership tracking (Robust) and tamper detection (Fragile).",
+    "navOrder": 23,
+    "category": "Security"
+  },
+  {
+    "id": 21,
+    "slug": "security-introduction",
+    "version": "1.4.0",
+    "title": "Introduction to Security",
+    "description": "An overview of SoundFlow's comprehensive security suite, including encryption, digital signatures, watermarking, and acoustic fingerprinting.",
+    "navOrder": 21,
+    "category": "Security"
+  },
+  {
+    "id": 22,
+    "slug": "security-encryption-and-signatures",
+    "version": "1.4.0",
+    "title": "Encryption & Signatures",
+    "description": "Learn how to protect audio confidentiality with AES-256 and ensure authenticity using ECDSA digital signatures.",
+    "navOrder": 22,
+    "category": "Security"
+  },
+  {
+    "id": 24,
+    "slug": "security-acoustic-fingerprinting",
+    "version": "1.4.0",
+    "title": "Acoustic Fingerprinting",
+    "description": "Learn how to identify audio content programmatically by generating and matching robust spectral fingerprints.",
+    "navOrder": 24,
+    "category": "Security"
+  },
+  {
+    "id": 13,
+    "slug": "portmidi-backend",
+    "version": "1.4.0",
+    "title": "PortMidi Backend for MIDI I/O & Synchronization",
+    "description": "A guide to the SoundFlow.Midi.PortMidi package, explaining how to enable cross-platform MIDI input/output, routing, and advanced synchronization (MIDI Clock, MTC).",
+    "navOrder": 13,
+    "category": "Extensions"
+  },
+  {
+    "id": 1.1,
+    "slug": "migration-guide",
+    "version": "1.4.0",
+    "title": "Migration Guide (v1.3 to v1.4)",
+    "description": "A guide to updating your code from SoundFlow v1.3.x to v1.4.0, covering breaking changes and introducing the new security suite.",
+    "navOrder": 1.1,
+    "category": "Core"
+  },
+  {
+    "id": 13.2,
+    "slug": "midi-routing",
+    "version": "1.4.0",
+    "title": "MIDI Routing (The Virtual Patch Bay)",
+    "description": "A guide to connecting MIDI sources to destinations using the MidiManager's routing system to create live signal paths.",
+    "navOrder": 13.2,
+    "category": "MIDI"
+  },
+  {
+    "id": 13.3,
+    "slug": "midi-real-time-modifiers",
+    "version": "1.4.0",
+    "title": "Real-time MIDI Modifiers",
+    "description": "Learn how to create custom real-time MIDI effects like arpeggiators, chord generators, and velocity curves using the MidiModifier class.",
+    "navOrder": 13.3,
+    "category": "MIDI"
+  },
+  {
+    "id": 13.1,
+    "slug": "midi-io-and-device-management",
+    "version": "1.4.0",
+    "title": "MIDI I/O & Device Management",
+    "description": "A foundational guide to discovering, initializing, and interacting with physical MIDI devices for basic input and output operations.",
+    "navOrder": 13.1,
+    "category": "MIDI"
+  },
+  {
+    "id": 13.4,
+    "slug": "midi-control-and-mapping-introduction",
+    "version": "1.4.0",
+    "title": "MIDI Control & Mapping (Introduction)",
+    "description": "Learn how to expose parameters on your custom components for real-time control using the IMidiMappable interface and ControllableParameter attribute.",
+    "navOrder": 13.4,
+    "category": "MIDI"
+  },
+  {
+    "id": 13.5,
+    "slug": "midi-control-and-mapping-advanced",
+    "version": "1.4.0",
+    "title": "MIDI Control & Mapping (Advanced)",
+    "description": "A deep dive into programmatically creating complex MIDI mappings, handling relative encoders, triggering methods, and using High-Resolution (14-bit) MIDI.",
+    "navOrder": 13.5,
+    "category": "MIDI"
+  },
+  {
+    "id": 2.5,
+    "slug": "metadata-and-tagging",
+    "version": "1.4.0",
+    "title": "Metadata & Tagging",
+    "description": "Learn how to read and write metadata tags (ID3, Vorbis, MP4) and analyze audio file formats using the new SoundFlow.Metadata namespace.",
+    "navOrder": 2.5,
+    "category": "Core"
+  },
+  {
+    "id": 1,
+    "slug": "getting-started",
+    "version": "1.4.0",
+    "title": "Getting Started with SoundFlow",
+    "description": "Learn how to install the library, set up your development environment, and write your first SoundFlow application.",
+    "navOrder": 1,
+    "category": "Core"
+  },
+  {
+    "id": 12,
+    "slug": "ffmpeg-codec-extension",
+    "version": "1.4.0",
+    "title": "FFmpeg Codec Extension",
+    "description": "A detailed guide to using the SoundFlow.Codecs.FFMpeg package to add extensive audio format support for decoding and encoding (MP3, AAC, OGG, Opus, FLAC, and more).",
+    "navOrder": 12,
+    "category": "Extensions"
+  },
+  {
+    "id": 4.4,
+    "slug": "editing-recording-and-sequencing",
+    "version": "1.4.0",
+    "title": "Editing - Recording & Sequencing",
+    "description": "A comprehensive guide to recording live MIDI performances into your composition and using the Sequencer component for sample-accurate MIDI playback.",
+    "navOrder": 4.4,
+    "category": "Editing"
+  },
+  {
+    "id": 4.3,
+    "slug": "editing-playback-and-rendering",
+    "version": "1.4.0",
+    "title": "Editing - Playback and Rendering",
+    "description": "Learn how to play back your entire composition in real-time and how to render it to an audio file for export.",
+    "navOrder": 4.3,
+    "category": "Editing"
+  },
+  {
+    "id": 4.6,
+    "slug": "editing-persistence",
+    "version": "1.4.0",
+    "title": "Editing - Project Persistence",
+    "description": "Learn how to save and load entire compositions as .sfproj files, manage media assets, and handle missing files.",
+    "navOrder": 4.6,
+    "category": "Editing"
+  },
+  {
+    "id": 4.2,
+    "slug": "editing-midi-tracks-and-tempo",
+    "version": "1.4.0",
+    "title": "Editing - MIDI Tracks & The Master Tempo",
+    "description": "A deep dive into creating and editing MIDI tracks, programmatically manipulating notes and automation, and managing the master tempo track that governs all timing.",
+    "navOrder": 4.2,
+    "category": "Editing"
+  },
+  {
+    "id": 4,
+    "slug": "editing-introduction",
+    "version": "1.4.0",
+    "title": "Editing Engine - Introduction",
+    "description": "Get a high-level overview of the SoundFlow editing engine, its service-oriented architecture, and the core Composition model for audio and MIDI projects.",
+    "navOrder": 4,
+    "category": "Editing"
+  },
+  {
+    "id": 4.1,
+    "slug": "editing-audio-tracks",
+    "version": "1.4.0",
+    "title": "Editing - Audio Tracks & Segments",
+    "description": "Learn how to create and manipulate audio tracks and segments, and apply settings like fades, loops, time stretching, and effects.",
+    "navOrder": 4.1,
+    "category": "Editing"
+  },
+  {
+    "id": 4.5,
+    "slug": "editing-advanced-editing-tools",
+    "version": "1.4.0",
+    "title": "Editing - Advanced Editing Tools",
+    "description": "Discover advanced editing operations for both audio and MIDI, including quantization, structural editing, and file export.",
+    "navOrder": 4.5,
+    "category": "Editing"
+  },
+  {
+    "id": 3,
+    "slug": "device-management",
+    "version": "1.4.0",
+    "title": "Device Management",
+    "description": "Learn how to manage audio and MIDI devices in SoundFlow, including initialization, switching, and advanced configuration.",
+    "navOrder": 3,
+    "category": "Core"
+  },
+  {
+    "id": 2,
+    "slug": "core-concepts",
+    "version": "1.4.0",
+    "title": "Core Concepts",
+    "description": "Learn the fundamental building blocks of SoundFlow and how they interact to create a powerful and flexible audio processing pipeline.",
+    "navOrder": 2,
+    "category": "Core"
+  },
+  {
+    "id": 5,
+    "slug": "api-reference",
+    "version": "1.4.0",
+    "title": "API Reference",
+    "description": "A detailed overview of the SoundFlow API, including namespaces, classes, interfaces, and their members.",
+    "navOrder": 5,
+    "category": "Core"
+  },
+  {
+    "id": 6,
+    "slug": "advanced-topics",
+    "version": "1.4.0",
+    "title": "Advanced Topics",
+    "description": "Learn how to extend the SoundFlow engine, optimize performance, and understand threading considerations.",
+    "navOrder": 6,
+    "category": "Core"
+  },
+  {
+    "id": 11,
+    "slug": "webrtc-apm",
     "version": "1.3.0",
     "title": "WebRTC Audio Processing Module (APM) Extension",
     "description": "Integrate advanced voice processing capabilities like Echo Cancellation, Noise Suppression, and Automatic Gain Control into SoundFlow using the WebRTC APM Extension.",
@@ -405,7 +747,7 @@
     "category": "Core"
   },
   {
-    "id": 45,
+    "id": 83,
     "slug": "webrtc-apm",
     "version": "1.1.2",
     "title": "WebRTC Audio Processing Module (APM) Extension",
@@ -414,7 +756,7 @@
     "category": "Extensions"
   },
   {
-    "id": 46,
+    "id": 84,
     "slug": "tutorials-and-examples",
     "version": "1.1.2",
     "title": "Tutorials and Examples",
@@ -423,7 +765,7 @@
     "category": "Core"
   },
   {
-    "id": 47,
+    "id": 85,
     "slug": "getting-started",
     "version": "1.1.2",
     "title": "Getting Started with SoundFlow",
@@ -432,7 +774,7 @@
     "category": "Core"
   },
   {
-    "id": 48,
+    "id": 86,
     "slug": "editing-engine",
     "version": "1.1.2",
     "title": "Editing Engine & Persistence",
@@ -441,7 +783,7 @@
     "category": "Core"
   },
   {
-    "id": 49,
+    "id": 87,
     "slug": "core-concepts",
     "version": "1.1.2",
     "title": "Core Concepts",
@@ -450,7 +792,7 @@
     "category": "Core"
   },
   {
-    "id": 50,
+    "id": 88,
     "slug": "api-reference",
     "version": "1.1.2",
     "title": "API Reference",
@@ -459,7 +801,7 @@
     "category": "Core"
   },
   {
-    "id": 51,
+    "id": 89,
     "slug": "advanced-topics",
     "version": "1.1.2",
     "title": "Advanced Topics",

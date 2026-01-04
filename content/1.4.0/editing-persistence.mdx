@@ -1,0 +1,258 @@
+---
+id: 4.6
+title: Editing - Project Persistence
+description: Learn how to save and load entire compositions as .sfproj files, manage media assets, and handle missing files.
+navOrder: 4.6
+category: Editing
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs, Card, CardBody, CardHeader} from "@heroui/react";
+
+# Project Persistence
+
+The `CompositionProjectManager` (`SoundFlow.Editing.Persistence.CompositionProjectManager`) is a static class that provides robust methods for saving and loading your entire `Composition` to and from a JSON-based format with the `.sfproj` extension.
+
+This system is designed for portability, handling not just the project structure but also all associated media files.
+
+## What's Saved in a `.sfproj` File?
+
+The project file is a comprehensive snapshot of your composition, including:
+*   **Project Settings:** Name, master volume, target sample rate, and channel count.
+*   **Master Tempo Track:** All `TempoMarker`s are saved to preserve your project's tempo map.
+*   **Audio Tracks:** All `Track`s, their settings, and all their `AudioSegment`s (including fades, loops, time-stretch settings, etc.).
+*   **MIDI Tracks:** All `MidiTrack`s, their settings (including `MidiModifier`s), their `MidiSegment`s, and the underlying MIDI note/automation data.
+*   **Effects:** All `SoundModifier` and `AudioAnalyzer` instances at every level (segment, track, and master).
+*   **MIDI Mappings:** All real-time MIDI control mappings created in the `MidiMappingManager`.
+*   **Media References:** A detailed manifest of all external audio and MIDI sources, with information for resolving their location.
+
+<Tabs color="primary" variant="bordered" aria-label="Project persistence options" className="mt-4">
+    <Tab
+        key="save"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='material-symbols:save-outline' />
+                <span>Saving a Project</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                The `CompositionProjectManager.SaveProjectAsync` method handles saving. It accepts a `ProjectSaveOptions` object for fine-grained control over media consolidation and new security features like digital signing.
+
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Editing;
+                using SoundFlow.Editing.Persistence;
+                using SoundFlow.Security.Configuration; // Required for signing
+                using System.Threading.Tasks;
+
+                public async Task SaveMyProject(Composition composition, string filePath)
+                {
+                    // Generate a new key pair for this example. In a real app,
+                    // you would load your private key securely.
+                    var signingKeys = SignatureConfiguration.Generate();
+
+                    // Create save options. Default is to consolidate and embed.
+                    var saveOptions = new ProjectSaveOptions
+                    {
+                        ConsolidateMedia = true,
+                        EmbedSmallMedia = true,
+                        MaxEmbedSizeBytes = 2 * 1024 * 1024,
+                        SigningConfiguration = signingKeys // Sign the project file on save
+                    };
+
+                    await CompositionProjectManager.SaveProjectAsync(
+                        composition.Renderer.Engine, // The engine is required
+                        composition,
+                        filePath,
+                        saveOptions
+                    );
+                    Console.WriteLine($"Project saved to {filePath}");
+                    Console.WriteLine($"A detached signature was saved to {filePath}.sig");
+                }
+                ```
+
+                **Saving Options (`ProjectSaveOptions`):**
+                <ul className="list-disc pl-5 mt-2 space-y-2">
+                    <li>
+                        <strong>`ConsolidateMedia` (bool):</strong> If `true`, SoundFlow copies all unique external audio and MIDI files referenced by segments into an `Assets` subfolder next to your `.sfproj` file. This makes the project self-contained and portable.
+                    </li>
+                    <li>
+                        <strong>`EmbedSmallMedia` (bool):</strong> If `true`, audio sources smaller than `MaxEmbedSizeBytes` will be embedded directly into the `.sfproj` file as Base64-encoded strings. This is useful for short sound effects, avoiding the need for separate files.
+                    </li>
+                    <li><strong>`MaxEmbedSizeBytes` (long):</strong> The size threshold in bytes for embedding. Defaults to 1MB.</li>
+                    <li><strong>`ConsolidatedMediaFolderName` (string):</strong> The name of the folder for consolidated assets. Defaults to "Assets".</li>
+                    <li>
+                        <strong>`SigningConfiguration` (SignatureConfiguration):</strong> If provided, the project manager will generate a digital signature for the `.sfproj` file and save it as a detached `.sig` file. This ensures the integrity and authenticity of your project.
+                    </li>
+                </ul>
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="verify"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='material-symbols:verified-user-outline' />
+                <span>Verifying a Project</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                Before loading a project, you can verify its digital signature using `CompositionProjectManager.VerifyProjectAsync` to ensure it has not been tampered with since it was last saved.
+
+                ```csharp
+                using SoundFlow.Security.Configuration;
+                using SoundFlow.Editing.Persistence;
+                using System.Threading.Tasks;
+
+                public async Task<bool> VerifyMyProject(string projectPath, string publicKeyPem)
+                {
+                    var signaturePath = projectPath + ".sig";
+                    if (!File.Exists(projectPath) || !File.Exists(signaturePath))
+                    {
+                        Console.WriteLine("Project or signature file not found.");
+                        return false;
+                    }
+
+                    // In a real app, you would distribute and load your public key.
+                    var config = new SignatureConfiguration { PublicKeyPem = publicKeyPem };
+                    
+                    var result = await CompositionProjectManager.VerifyProjectAsync(projectPath, null, config);
+
+                    if (result.IsSuccess && result.Value)
+                    {
+                        Console.WriteLine("Project signature is valid and authentic.");
+                        return true;
+                    }
+                    
+                    Console.WriteLine($"Verification failed: {result.Error?.Message ?? "Signature mismatch."}");
+                    return false;
+                }
+                ```
+                Verification requires the **Public Key** that corresponds to the Private Key used for signing. This public key can be safely distributed with your application.
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="load"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='material-symbols:folder-open-outline' />
+                <span>Loading a Project</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                The `CompositionProjectManager.LoadProjectAsync` method reconstructs a `Composition` from a `.sfproj` file. It returns the loaded `Composition` and a list of any media sources that could not be found. For NativeAOT compatibility, it can also accept a custom JSON type resolver (see section below).
+
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Editing;
+                using SoundFlow.Editing.Persistence;
+                using SoundFlow.Structs;
+                using System.Threading.Tasks;
+                using System.Linq;
+                using System.Collections.Generic;
+
+                public async Task<(Composition?, List<ProjectSourceReference>)> LoadMyProject(AudioEngine engine, string filePath)
+                {
+                    if (!File.Exists(filePath))
+                    {
+                        Console.WriteLine($"Project file not found: {filePath}");
+                        return (null, new List<ProjectSourceReference>());
+                    }
+                    
+                    var (loadedComposition, unresolvedSources) = await CompositionProjectManager.LoadProjectAsync(engine, AudioFormat.DvdHq, filePath);
+
+                    if (unresolvedSources.Any())
+                    {
+                        Console.WriteLine("Warning: Some media sources could not be found:");
+                        foreach (var missing in unresolvedSources)
+                        {
+                            Console.WriteLine($" - Missing ID: {missing.Id}, Original Path: {missing.OriginalAbsolutePath ?? "N/A"}");
+                        }
+                    }
+
+                    Console.WriteLine($"Project '{loadedComposition.Name}' loaded successfully!");
+                    return (loadedComposition, unresolvedSources);
+                }
+                ```
+                Upon loading, the system automatically rehydrates everything: audio tracks, MIDI tracks (linking them to internal synthesizers), the tempo map, and all MIDI mappings.
+            </CardBody>
+        </Card>
+    </Tab>
+    <Tab
+        key="relink"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='ph:link-bold' />
+                <span>Media Management & Relinking</span>
+            </div>
+        }
+    >
+        <Card flat className="bg-transparent">
+            <CardBody>
+                SoundFlow attempts to locate media in this order:
+                1.  **Embedded Data** in the `.sfproj` file.
+                2.  **Consolidated Relative Path** (e.g., `Assets/guid.wav`).
+                3.  **Original Absolute Path** stored during the save.
+
+                If a source is still missing, it's added to the `unresolvedSources` list returned by `LoadProjectAsync`. You can then use `CompositionProjectManager.RelinkMissingMedia` to update the project with the new location of a missing file.
+                ```csharp
+                using SoundFlow.Abstracts;
+                using SoundFlow.Editing.Persistence;
+                using System.Threading.Tasks;
+
+                public void AttemptRelink(AudioEngine engine, ProjectSourceReference missingSource, string newFilePath, string projectDirectory)
+                {
+                    bool success = CompositionProjectManager.RelinkMissingMedia(
+                        engine,
+                        missingSource,
+                        newFilePath,
+                        projectDirectory
+                    );
+
+                    if (success)
+                    {
+                        Console.WriteLine($"Successfully relinked source. You may need to reload the project or manually update segments.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Failed to relink. File at new path might be invalid.");
+                    }
+                }
+                ```
+            </CardBody>
+        </Card>
+    </Tab>
+</Tabs>
+
+## NativeAOT Considerations
+
+SoundFlow v1.4 is fully compatible with NativeAOT, but it requires you to take specific steps if you use custom `SoundModifier` or `AudioAnalyzer` classes in your projects.
+
+To avoid reflection and ensure the AOT compiler doesn't trim necessary code, the project persistence engine now uses a source-generated `JsonSerializerContext` and a `TypeRegistry`.
+
+1.  **Register Your Custom Types:** At your application's startup, you **must** register any custom `SoundModifier` or `AudioAnalyzer` types that you want to be able to save and load in a project.
+    ```csharp
+    using SoundFlow.Utils;
+    // At app startup:
+    TypeRegistry.RegisterType<MyCustomReverb>();
+    TypeRegistry.RegisterType<MySpectrumAnalyzer>();
+    ```
+
+2.  **Provide a Custom JSON Resolver (Advanced):** If your custom components contain properties of your own custom DTOs (not just primitives like `int`, `float`, `string`, etc.), you must create your own `JsonSerializerContext` for those types and pass a combined resolver to the load/save methods.
+    ```csharp
+    // MyCustomTypes.cs
+    [JsonSerializable(typeof(MyReverbSettings))]
+    public partial class MyJsonContext : JsonSerializerContext { }
+    
+    await CompositionProjectManager.SaveProjectAsync(..., customTypeResolver: resolver);
+    var (comp, _) = await CompositionProjectManager.LoadProjectAsync(..., customTypeResolver: resolver);
+    ```
+
+If you only use built-in SoundFlow components, you do not need to take any action.

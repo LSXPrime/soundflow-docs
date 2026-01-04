@@ -123,9 +123,9 @@ const DocsPage: React.FC = () => {
         return <NotFoundPage />;
     }
 
-    // Standard Redirect: Handle /docs or /docs/v1.3.0 (missing slug)
+    // Standard Redirect: Handle /docs or /docs/v1.4.0 (missing slug)
     if (!version || !slug) {
-        const latestVersion = versions[0] || 'v1.3.0';
+        const latestVersion = versions[0] || 'v1.4.0';
         const firstPage = getFirstPageForVersion(latestVersion);
         const defaultSlug = firstPage?.slug || 'introduction';
         return <Navigate to={`/docs/${latestVersion}/${defaultSlug}`} replace />;

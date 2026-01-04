@@ -1,0 +1,188 @@
+﻿---
+id: 2.5
+title: Metadata & Tagging
+description: Learn how to read and write metadata tags (ID3, Vorbis, MP4) and analyze audio file formats using the new SoundFlow.Metadata namespace.
+navOrder: 2.5
+category: Core
+---
+
+import {Icon} from "@iconify/react";
+import {Card, CardBody, CardHeader} from "@heroui/react";
+
+# Metadata & Tagging
+
+This subsystem provides tools for reading and writing tags (Artist, Title, Album Art) and analyzing file headers to determine format, duration, and bitrate without needing to fully decode the audio stream.
+
+Supported formats include:
+*   **MP3** (ID3v1, ID3v2.3)
+*   **FLAC, OGG** (Vorbis Comments)
+*   **WAV** (RIFF INFO, ID3 chunks)
+*   **AIFF** (IFF Chunks, ID3 chunks)
+*   **M4A / MP4** (iTunes-style atoms/boxes)
+
+## Reading Metadata
+
+The `SoundMetadataReader` is your entry point. It can automatically detect the format of a file (even if the extension is wrong) by inspecting the header bytes.
+
+### Basic Usage
+
+To inspect a file, use the static `Read` method.
+
+```csharp
+using SoundFlow.Metadata;
+using SoundFlow.Metadata.Models;
+
+var filePath = "path/to/song.mp3";
+
+// Returns a Result<SoundFormatInfo>
+var result = SoundMetadataReader.Read(filePath);
+
+if (result.IsSuccess)
+{
+    SoundFormatInfo info = result.Value;
+
+    Console.WriteLine($"Format: {info.FormatName} ({info.CodecName})");
+    Console.WriteLine($"Duration: {info.Duration}");
+    Console.WriteLine($"Sample Rate: {info.SampleRate} Hz");
+    Console.WriteLine($"Bitrate: {info.Bitrate / 1000} kbps ({info.BitrateMode})");
+
+    if (info.Tags != null)
+    {
+        Console.WriteLine($"Title: {info.Tags.Title}");
+        Console.WriteLine($"Artist: {info.Tags.Artist}");
+        Console.WriteLine($"Album: {info.Tags.Album}");
+
+        if (info.Tags.AlbumArt != null)
+        {
+            Console.WriteLine($"Album Art found: {info.Tags.AlbumArt.Length} bytes");
+        }
+    }
+}
+else
+{
+    Console.WriteLine($"Error: {result.Error.Message}");
+}
+```
+
+### `ReadOptions`
+
+You can optimize the reading process by passing a `ReadOptions` object.
+
+```csharp
+var options = new ReadOptions
+{
+    // Set to false to skip parsing metadata tags entirely (faster).
+    ReadTags = true,
+
+    // Set to false to skip extracting Album Art images.
+    // This saves significant memory when processing many files.
+    ReadAlbumArt = false,
+
+    // Set to false to skip parsing Cue Sheets (common in large FLAC files).
+    ReadCueSheet = false,
+
+    // Controls duration calculation strategy.
+    // FastEstimate: Calculates duration based on file size and header bitrate. Instant but less accurate for VBR.
+    // AccurateScan: Scans the entire file to count frames. Slower but 100% precise.
+    DurationAccuracy = DurationAccuracy.FastEstimate
+};
+
+var info = SoundMetadataReader.Read(filePath, options).Value;
+```
+
+## The `SoundFormatInfo` Model
+
+The reader returns a `SoundFormatInfo` object containing detailed technical data.
+
+| Property           | Description                                                                    |
+|:-------------------|:-------------------------------------------------------------------------------|
+| `FormatName`       | Common name (e.g., "MPEG Layer III").                                          |
+| `FormatIdentifier` | Lowercase ID used by the `AudioEngine` codec system (e.g., `"mp3"`, `"flac"`). |
+| `Duration`         | The length of the audio.                                                       |
+| `SampleRate`       | Hz (e.g., 44100).                                                              |
+| `ChannelCount`     | Number of channels (1=Mono, 2=Stereo).                                         |
+| `BitsPerSample`    | Bit depth (e.g., 16, 24). 0 for lossy formats.                                 |
+| `Bitrate`          | Bits per second.                                                               |
+| `IsLossless`       | Boolean indicating if the codec is lossless.                                   |
+| `Tags`             | A `SoundTags` object containing standard metadata fields.                      |
+| `Cues`             | A `CueSheet` object if one was embedded (e.g., in FLAC).                       |
+
+## Writing Metadata
+
+The `SoundMetadataWriter` allows you to update or strip tags from audio files.
+
+<Card className="bg-warning-50/50 dark:bg-warning-500/10 border-1 border-warning-200/50 dark:border-warning-500/20 mb-6">
+    <CardHeader>
+        <div className="flex items-center gap-3">
+            <Icon icon="lucide:alert-triangle" className="text-warning text-2xl flex-shrink-0" />
+            <h4 className="font-semibold text-lg">Destructive Operation</h4>
+        </div>
+    </CardHeader>
+    <CardBody className="pt-0 text-sm">
+        Metadata writing in SoundFlow is a **destructive operation**. It creates a temporary copy of the file with the new tags and then **overwrites the original file**. Always ensure you have backups or handle errors gracefully.
+    </CardBody>
+</Card>
+
+### Writing Tags
+
+```csharp
+using SoundFlow.Metadata;
+using SoundFlow.Metadata.Models;
+
+var filePath = "song.mp3";
+
+// 1. Create a new tags object
+var newTags = new SoundTags
+{
+    Title = "My New Title",
+    Artist = "The Developers",
+    Year = 2023,
+    Genre = "Synthwave"
+};
+
+// 2. Write to file (Async recommended for I/O)
+var result = await SoundMetadataWriter.WriteTagsAsync(filePath, newTags);
+
+if (result.IsSuccess)
+{
+    Console.WriteLine("Tags updated successfully.");
+}
+```
+
+### Removing Tags
+
+You can also strip all supported metadata from a file, which is useful for privacy or preparing samples.
+
+```csharp
+var result = await SoundMetadataWriter.RemoveTagsAsync(filePath);
+```
+
+## Format-Specific Details
+
+SoundFlow handles the complexities of different tagging standards automatically.
+
+*   **MP3:** Writes ID3v2.3 tags at the start of the file. ID3v1 tags at the end of the file are read but not written (deprecated).
+*   **FLAC & OGG:** Uses Vorbis Comments. `ALBUMARTIST` is mapped correctly alongside standard fields.
+*   **M4A / MP4:** Manipulates the `moov.udta.meta.ilst` atom tree to write iTunes-style metadata.
+*   **WAV:** Prioritizes reading `id3 ` chunks. If absent, it reads standard RIFF `LIST INFO` chunks. When writing, it writes an `id3 ` chunk for maximum compatibility with modern players.
+
+## Helper: Quick Format Detection
+
+If you just need to know the format of a stream to initialize an `AudioEngine` device (without parsing all tags), use the helper on `AudioFormat`.
+
+```csharp
+using SoundFlow.Structs;
+
+// Open a stream
+using var stream = File.OpenRead("unknown_file.bin");
+
+// Inspects header bytes to guess format, channels, and sample rate.
+// Returns null if format is unrecognized.
+AudioFormat? format = AudioFormat.GetFormatFromStream(stream);
+
+if (format.HasValue)
+{
+    Console.WriteLine($"Detected: {format.Value.SampleRate}Hz, {format.Value.Channels}ch");
+    // You can now pass this 'format' to engine.InitializePlaybackDevice(...)
+}
+```

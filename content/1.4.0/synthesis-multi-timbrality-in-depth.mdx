@@ -1,0 +1,154 @@
+﻿---
+id: 16
+title: Multitimbrality in Depth
+description: Learn how the SoundFlow synthesizer handles Multitimbrality, allowing you to play different instruments on different MIDI channels simultaneously from a single component.
+navOrder: 16
+category: Synthesis
+---
+
+import {Icon} from "@iconify/react";
+
+# Multitimbrality in Depth
+
+Multitimbrality is the ability of a synthesizer to play different sounds, or "timbres," on different MIDI channels at the same time. The SoundFlow `Synthesizer` is a fully 16-part multi-timbral instrument, making it a powerful central sound module for your compositions.
+
+## How it Works: The `MidiChannel` Class
+
+Internally, the `Synthesizer` component doesn't handle MIDI messages directly. Instead, it manages an array of 16 `MidiChannel` objects, one for each MIDI channel (1-16).
+
+When `synthesizer.ProcessMidiMessage(message)` is called:
+1.  The `Synthesizer` inspects the message's `Channel` property.
+2.  It forwards the message to the corresponding `MidiChannel` instance in its internal array.
+3.  Each `MidiChannel` object is a state machine that maintains its own, independent state.
+
+**Each `MidiChannel` instance tracks:**
+*   The currently selected `Instrument` (changed by Program Change messages).
+*   The current MIDI Bank (set by CC 0 and CC 32).
+*   The list of its own active `IVoice`s.
+*   Channel-wide parameters like Volume (CC 7), Pan (CC 10), and Pitch Bend.
+*   The state of the Damper Pedal (Sustain, CC 64).
+
+This architecture allows you to send a flurry of MIDI messages for different instruments on different channels to a single `Synthesizer` instance, and it will correctly route the data and generate the mixed audio output.
+
+## Complete Example: Playing Multiple Instruments
+
+This example demonstrates how to control two different instruments on two different MIDI channels from a single `Synthesizer`.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.Structs;
+using SoundFlow.Structs;
+using SoundFlow.Synthesis;
+using SoundFlow.Synthesis.Banks;
+using System;
+using System.Linq;
+using System.Threading;
+
+public static class Program
+{
+    public static void Main()
+    {
+        Console.WriteLine("Synthesizer Multitimbrality Example");
+
+        // 1. Standard setup
+        using var engine = new MiniAudioEngine();
+        var format = AudioFormat.DvdHq;
+        using var device = engine.InitializePlaybackDevice(null, format);
+
+        // 2. Create a synthesizer with a bank that has multiple instruments.
+        var instrumentBank = new BasicInstrumentBank(format);
+        var synthesizer = new Synthesizer(engine, format, instrumentBank);
+
+        device.MasterMixer.AddComponent(synthesizer);
+        device.Start();
+
+        Console.WriteLine("Playing a C Major chord on Channel 1 (Default Piano)...");
+        // Status 0x90 = Note On, Channel 1
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 60, 100)); // C4
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 64, 100)); // E4
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x90, 67, 100)); // G4
+
+        Thread.Sleep(1500);
+
+        Console.WriteLine("\nNow, playing a melody on Channel 2 (Music Box)...");
+
+        // Control Channel 2
+
+        // Status 0xC1 = Program Change, Channel 2. Program 10 is the Music Box in BasicInstrumentBank.
+        synthesizer.ProcessMidiMessage(new MidiMessage(0xC1, 10, 0));
+
+        // Status 0x91 = Note On, Channel 2
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x91, 72, 120)); // C5
+        Thread.Sleep(500);
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x91, 74, 120)); // D5
+        Thread.Sleep(500);
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x91, 76, 120)); // E5
+        Thread.Sleep(500);
+
+        Console.WriteLine("\nReleasing all notes...");
+        // Status 0x80 = Note Off, Channel 1
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 60, 0));
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 64, 0));
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x80, 67, 0));
+
+        // Status 0x81 = Note Off, Channel 2
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x81, 72, 0));
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x81, 74, 0));
+        synthesizer.ProcessMidiMessage(new MidiMessage(0x81, 76, 0));
+
+        Thread.Sleep(2000); // Wait for release tails to fade
+
+        device.Stop();
+        synthesizer.Dispose();
+    }
+}
+```
+
+## Bank Select Messages
+
+The MIDI specification allows for more than 128 programs by using Bank Select messages. A MIDI bank can be thought of as a folder or collection of 128 programs. To select an instrument from a specific bank, you must send Control Change messages **before** you send the Program Change message.
+
+*   **CC 0 (Bank Select MSB):** Sets the Most Significant Byte of the bank number.
+*   **CC 32 (Bank Select LSB):** Sets the Least Significant Byte of the bank number.
+
+The final bank number is calculated as `(MSB * 128) + LSB`.
+
+Most modern synthesizers and SoundFonts simply use the MSB and ignore the LSB. For compatibility, the SoundFlow `Synthesizer` respects both.
+
+### Example: Selecting an Instrument from a Specific Bank
+
+This is especially important when using a `SoundFontBank`, which often organizes presets across different banks.
+
+```csharp
+// Assume 'synthesizer' is an active instance.
+int targetBank = 1;   // The bank number you want to select
+int targetProgram = 24; // The program number within that bank
+int channel = 3;      // The MIDI channel to change
+
+// Calculate MSB and LSB from the target bank number
+byte bankMsb = (byte)(targetBank / 128);
+byte bankLsb = (byte)(targetBank % 128);
+
+// The MIDI status byte for CC on channel 3 is 0xB2 (0xB0 + (3 - 1))
+byte ccStatus = (byte)(0xB0 + (channel - 1));
+
+// 1. Send Bank Select MSB (CC 0)
+synthesizer.ProcessMidiMessage(new MidiMessage(ccStatus, 0, bankMsb));
+
+// 2. Send Bank Select LSB (CC 32)
+synthesizer.ProcessMidiMessage(new MidiMessage(ccStatus, 32, bankLsb));
+
+// 3. Send the Program Change message
+// The MIDI status byte for Program Change on channel 3 is 0xC2
+byte pcStatus = (byte)(0xC0 + (channel - 1));
+synthesizer.ProcessMidiMessage(new MidiMessage(pcStatus, (byte)targetProgram, 0));
+
+// Now, any notes sent on channel 3 will play instrument 24 from bank 1.
+```
+
+<div className="flex items-center gap-3 my-4 p-4 rounded-lg bg-primary-50/50 dark:bg-primary-500/10 border-1 border-primary-200/50 dark:border-primary-500/20">
+    <Icon icon="lucide:info" className="text-primary text-2xl flex-shrink-0" />
+    <p className="text-sm">
+        **GM Drum Channel:** In the General MIDI specification, Channel 10 is reserved for percussion. SoundFont banks often place their drum kits on Bank 128. To select a drum kit, you would typically send Bank Select messages to choose Bank 128, followed by a Program Change on Channel 10.
+    </p>
+</div>

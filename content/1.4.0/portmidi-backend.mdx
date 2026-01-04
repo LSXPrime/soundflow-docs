@@ -1,0 +1,282 @@
+﻿---
+id: 13
+title: PortMidi Backend for MIDI I/O & Synchronization
+description: A guide to the SoundFlow.Midi.PortMidi package, explaining how to enable cross-platform MIDI input/output, routing, and advanced synchronization (MIDI Clock, MTC).
+navOrder: 13
+category: Extensions
+---
+
+import {Icon} from "@iconify/react";
+import {Tab, Tabs} from "@heroui/react";
+
+# PortMidi Backend for MIDI I/O & Synchronization
+
+The `SoundFlow.Midi.PortMidi` package is an extension that provides a robust, cross-platform MIDI backend for the SoundFlow audio engine.
+
+This package implements the required `IMidiBackend` interface and wraps the widely-supported PortMidi library. This integration enables your applications to communicate seamlessly with external MIDI hardware and software for both input and output (I/O).
+
+Beyond basic I/O, this backend integrates deeply with the `AudioEngine`'s new synchronization events. This offers advanced features critical for complex timing setups. For instance, the backend allows you to slave your composition's transport to an external MIDI Clock. Alternatively, it can act as a sample-accurate master clock source for your external hardware.
+
+## Features
+
+*   **Cross-Platform MIDI I/O:** Send and receive MIDI channel messages (Note On/Off, CC, Pitch Bend, etc.) on Windows, macOS, and Linux.
+*   **System Exclusive (SysEx):** Full support for sending and receiving large SysEx messages for deep hardware integration.
+*   **Seamless Integration:** A simple extension method, `UsePortMidi()`, enables the backend and configures the `MidiManager`.
+*   **MIDI Clock Synchronization (Master Mode):** Act as a master clock source, sending sample-accurate MIDI Clock, Start, Stop, and Continue messages to synchronize external hardware (drum machines, sequencers) to your SoundFlow application's transport.
+*   **MIDI Clock Synchronization (Slave Mode):** Synchronize a `Composition`'s playback to an external MIDI Clock source. SoundFlow will listen for Start, Stop, and Continue messages and adjust its transport to follow the incoming clock ticks.
+*   **MIDI Time Code (MTC) Synchronization (Slave Mode):** Synchronize a `Composition`'s playback position to incoming MIDI Time Code, perfect for video and post-production workflows.
+
+## Installation
+
+To use the PortMidi backend, add the `SoundFlow.Midi.PortMidi` package to your project. This will also bring in the core `SoundFlow` library if it's not already there.
+
+<Tabs color="primary" variant="bordered" aria-label="Installation options" className="mt-4">
+    <Tab
+        key="nuget"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:nuget' />
+                <span>NuGet Package Manager</span>
+            </div>
+        }
+    >
+        ```bash
+        Install-Package SoundFlow.Midi.PortMidi
+        ```
+    </Tab>
+    <Tab
+        key="cli"
+        title={
+            <div className="flex items-center gap-2">
+                <Icon icon='simple-icons:dotnet' />
+                <span>.NET CLI</span>
+            </div>
+        }
+    >
+        ```bash
+        dotnet add package SoundFlow.Midi.PortMidi
+        ```
+    </Tab>
+</Tabs>
+
+## Getting Started: Basic MIDI I/O
+
+This example demonstrates the fundamental workflow: enabling the backend, listing devices, receiving messages from an input, and sending a message to an output.
+
+```csharp
+using SoundFlow.Abstracts;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Midi.Devices;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Midi.Structs;
+using System;
+using System.Linq;
+
+public static class Program
+{
+    public static void Main()
+    {
+        // 1. Initialize the audio engine.
+        using var engine = new MiniAudioEngine();
+
+        // 2. Enable the PortMidi backend. This is the crucial step.
+        // It returns the backend instance, which we can ignore for basic I/O.
+        engine.UsePortMidi();
+        Console.WriteLine("PortMidi backend enabled.");
+
+        // 3. Refresh the list of available MIDI devices.
+        engine.UpdateMidiDevicesInfo();
+
+        // 4. Select input and output devices.
+        var inputDevice = engine.MidiInputDevices.FirstOrDefault();
+        var outputDevice = engine.MidiOutputDevices.FirstOrDefault();
+
+        if (inputDevice.Name == null)
+        {
+            Console.WriteLine("No MIDI input device found. Cannot receive messages.");
+        }
+        else
+        {
+            // 5. Get a managed input node from the MidiManager.
+            var inputNode = engine.MidiManager.GetOrCreateInputNode(inputDevice);
+            Console.WriteLine($"Listening for MIDI messages on '{inputDevice.Name}'...");
+
+            // 6. Subscribe to its output to receive messages.
+            inputNode.OnMessageOutput += OnMidiMessageReceived;
+        }
+
+        if (outputDevice.Name == null)
+        {
+            Console.WriteLine("No MIDI output device found. Cannot send messages.");
+        }
+        else
+        {
+            // 7. Get a managed output node.
+            var outputNode = engine.MidiManager.GetOrCreateOutputNode(outputDevice);
+            Console.WriteLine($"Ready to send MIDI messages to '{outputDevice.Name}'.");
+
+            // 8. Send a Middle C Note On message to the output device.
+            var noteOnMessage = new MidiMessage(0x90, 60, 100); // Note On, Channel 1, Middle C, Velocity 100
+            outputNode.ProcessMessage(noteOnMessage);
+            Console.WriteLine("Sent a Middle C Note On message.");
+        }
+
+        Console.WriteLine("\nPress any key to exit.");
+        Console.ReadKey();
+    }
+
+    private static void OnMidiMessageReceived(MidiMessage message)
+    {
+        Console.WriteLine($"Received MIDI Message: " +
+                          $"Cmd: {message.Command}, " +
+                          $"Ch: {message.Channel}, " +
+                          $"Data1: {message.Data1}, " +
+                          $"Data2: {message.Data2}");
+    }
+}
+```
+
+## Advanced Topic: MIDI Synchronization
+
+The `PortMidiBackend` provides powerful synchronization capabilities by integrating with the `AudioEngine`'s transport events.
+
+### Slave Mode: Syncing SoundFlow to External Gear
+
+In Slave Mode, your `Composition`'s transport (play, stop, position) is controlled by an external MIDI source.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Editing;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Midi.PortMidi.Enums;
+using SoundFlow.Structs;
+using System.Linq;
+
+// Setup
+using var engine = new MiniAudioEngine();
+var format = AudioFormat.DvdHq;
+
+// Enable the PortMidi backend and get a reference to it.
+var portMidiBackend = engine.UsePortMidi();
+
+engine.UpdateMidiDevicesInfo();
+var syncInputDevice = engine.MidiInputDevices.FirstOrDefault();
+
+if (syncInputDevice.Name == null)
+{
+    Console.WriteLine("No MIDI input device found for sync.");
+    return;
+}
+
+// Create a composition that will be controlled.
+var composition = new Composition(engine, format, "My Synced Project");
+// ... add audio and MIDI tracks to the composition ...
+
+// Configuration
+portMidiBackend.ConfigureSync(
+    SyncMode.Slave,
+    SyncSource.MidiClock, // Or SyncSource.Mtc
+    syncInputDevice,
+    null, // No output device needed for slave mode
+    composition.Renderer // The renderer's transport will be controlled
+);
+Console.WriteLine($"Composition is now slaved to MIDI Clock from '{syncInputDevice.Name}'.");
+
+// Monitoring
+portMidiBackend.OnSyncStatusChanged += status => Console.WriteLine($"Sync Status: {status}");
+portMidiBackend.OnBpmChanged += bpm => Console.WriteLine($"Detected BPM: {bpm:F2}");
+
+// Playback
+using var device = engine.InitializePlaybackDevice(null, format);
+var player = new SoundPlayer(engine, format, composition.Renderer);
+device.MasterMixer.AddComponent(player);
+device.Start();
+player.Play(); // Start the player, it will now wait for MIDI transport commands.
+
+Console.WriteLine("Waiting for MIDI Start/Clock messages. Press any key to exit.");
+Console.ReadKey();
+```
+
+### Master Mode: Making SoundFlow the Clock Source
+
+In Master Mode, your `Composition`'s playback drives the MIDI clock, synchronizing external hardware to your application.
+
+```csharp
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Editing;
+using SoundFlow.Midi.PortMidi;
+using SoundFlow.Midi.PortMidi.Enums;
+using SoundFlow.Structs;
+using System.Linq;
+
+// Setup
+using var engine = new MiniAudioEngine();
+var format = AudioFormat.DvdHq;
+
+var portMidiBackend = engine.UsePortMidi();
+
+engine.UpdateMidiDevicesInfo();
+var syncOutputDevice = engine.MidiOutputDevices.FirstOrDefault();
+
+if (syncOutputDevice.Name == null)
+{
+    Console.WriteLine("No MIDI output device found for sync.");
+    return;
+}
+
+var composition = new Composition(engine, format, "My Master Project");
+// ... add tracks ...
+
+// Configuration
+portMidiBackend.ConfigureSync(
+    SyncMode.Master,
+    SyncSource.Internal, // Not used in Master mode
+    null, // No input device
+    syncOutputDevice,
+    composition.Renderer // The renderer is the master clock source
+);
+Console.WriteLine($"SoundFlow is now Master MIDI Clock, outputting to '{syncOutputDevice.Name}'.");
+
+// Playback
+using var device = engine.InitializePlaybackDevice(null, format);
+var player = new SoundPlayer(engine, format, composition.Renderer);
+device.MasterMixer.AddComponent(player);
+device.Start();
+
+Console.WriteLine("Press any key to start sending MIDI Clock and playing...");
+Console.ReadKey();
+
+// Starting the player will now automatically send MIDI Start and Clock messages.
+player.Play();
+
+Console.WriteLine("Sending MIDI Clock. Press any key to stop.");
+Console.ReadKey();
+```
+
+## Error Handling
+
+Errors originating from the PortMidi library will throw a `PortBackendException`. This exception contains a `PortMidiError` enum that provides specific details about the failure.
+
+```csharp
+try
+{
+    var node = engine.MidiManager.GetOrCreateOutputNode(someDeviceInfo);
+}
+catch (PortBackendException ex)
+{
+    Console.WriteLine($"A PortMidi error occurred: {ex.ErrorCode}");
+    // ex.ErrorCode could be...
+    // - HostError: An OS-level error occurred.
+    // - InvalidDeviceId: The device ID was invalid (e.g., device disconnected).
+    // - DeviceIsBusy: The device is already in use by another application.
+    // ... and others.
+}
+```
+
+Key `PortMidiError` values include:
+*   `HostError`: An error was reported by the host operating system's MIDI API.
+*   `InvalidDeviceId`: The provided device ID is no longer valid, which can happen if a device is disconnected.
+*   `DeviceIsBusy`: The device is already in use by another application in an exclusive mode.
+*   `InsufficientMemory`: A memory allocation failed within the native library.
